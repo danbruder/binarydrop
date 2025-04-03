@@ -58,39 +58,38 @@ async fn handle_request(
     state: Arc<RwLock<ProxyState>>,
     req: Request<Body>,
 ) -> Result<Response<Body>, Infallible> {
-    // Get host from request
-    let host = req
-        .headers()
-        .get("host")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("");
+    // Extract app name from host header before moving req
+    let app_name = {
+        let host = req
+            .headers()
+            .get("host")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("");
 
-    // Extract app name from host (e.g., app-name.localhost:8080)
-    let app_name = host.split('.').next().unwrap_or("");
+        host.split('.').next().unwrap_or("").to_string() // Convert to owned String to avoid borrowing issues
+    };
 
-    // Handle admin interface
+    // Now we can safely move req
     if app_name == "admin" {
-        return Ok(handle_admin_request(state, req).await);
-    }
-
-    // Handle proxy to app
-    match proxy_to_app(state, app_name, req).await {
-        Ok(response) => Ok(response),
-        Err(e) => {
-            error!("Proxy error: {}", e);
-            Ok(Response::builder()
-                .status(500)
-                .body(Body::from(format!("Proxy error: {}", e)))
-                .unwrap())
+        // Handle admin interface
+        return Ok(admin_interface(state).await);
+    } else {
+        // Handle proxy to app
+        match proxy_to_app(state, &app_name, req).await {
+            Ok(response) => Ok(response),
+            Err(e) => {
+                error!("Proxy error: {}", e);
+                Ok(Response::builder()
+                    .status(500)
+                    .body(Body::from(format!("Proxy error: {}", e)))
+                    .unwrap())
+            }
         }
     }
 }
 
-/// Handle admin interface requests
-async fn handle_admin_request(
-    state: Arc<RwLock<ProxyState>>,
-    _req: Request<Body>,
-) -> Response<Body> {
+/// Admin interface handler (separated from handle_request to avoid req ownership issues)
+async fn admin_interface(state: Arc<RwLock<ProxyState>>) -> Response<Body> {
     // Get all apps
     let state_read = state.read().await;
     let apps = match db::apps::list_all(&state_read.db_pool).await {
@@ -188,7 +187,7 @@ async fn proxy_to_app(
     state: Arc<RwLock<ProxyState>>,
     app_name: &str,
     req: Request<Body>,
-) -> Result<Response<Body>> {
+) -> anyhow::Result<Response<Body>> {
     // Get app
     let state_read = state.read().await;
     let app = match db::apps::get_by_name(&state_read.db_pool, app_name).await? {
@@ -210,9 +209,8 @@ async fn proxy_to_app(
     }
 
     // Create URI for proxying
-    let uri = format!("http://{}:{}{}", app.host, app.port, req.uri().path())
-        .parse()
-        .context("Failed to parse URI")?;
+    let path_and_query = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("");
+    let uri = format!("http://{}:{}{}", app.host, app.port, path_and_query);
 
     // Create new request
     let (parts, body) = req.into_parts();
@@ -226,10 +224,9 @@ async fn proxy_to_app(
     }
 
     // Add custom headers
-    new_req = new_req.header(
-        "X-Forwarded-Host",
-        parts.headers.get("host").unwrap_or_default(),
-    );
+    if let Some(host) = parts.headers.get("host") {
+        new_req = new_req.header("X-Forwarded-Host", host);
+    }
     new_req = new_req.header("X-Forwarded-Proto", "http");
 
     // Build request
