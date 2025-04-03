@@ -23,6 +23,14 @@ pub async fn init_pool() -> Result<Pool<Sqlite>> {
         std::fs::create_dir_all(parent).context("Failed to create config directory")?;
     }
 
+    // Check if database file exists
+    if !db_path.exists() {
+        // Create an empty file
+        std::fs::File::create(&db_path).context("Failed to create database file")?;
+        info!("Created new database file at {}", db_path.display());
+    }
+
+    // Connect to the database
     let db_url = format!("sqlite:{}", db_path.display());
     info!("Connecting to database at {}", db_path.display());
 
@@ -37,6 +45,8 @@ pub async fn init_pool() -> Result<Pool<Sqlite>> {
         .run(&pool)
         .await
         .context("Failed to run database migrations")?;
+
+    info!("Database initialized successfully");
 
     Ok(pool)
 }
