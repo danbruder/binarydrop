@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::thread;
 use std::time::Duration;
 use tracing::instrument;
@@ -15,7 +15,7 @@ pub async fn execute(app_name: &str, lines: usize, follow: bool) -> Result<()> {
     let pool = db::init_pool().await?;
 
     // Check if app exists
-    let app = db::apps::get_by_name(&pool, app_name)
+    let _ = db::apps::get_by_name(&pool, app_name)
         .await?
         .ok_or_else(|| anyhow!("App '{}' not found", app_name))?;
 

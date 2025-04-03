@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {

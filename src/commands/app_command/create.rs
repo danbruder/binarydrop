@@ -1,11 +1,9 @@
 use anyhow::{anyhow, Context, Result};
-use chrono::Utc;
-use std::path::Path;
 use tracing::{info, instrument};
 
 use crate::config;
 use crate::db;
-use crate::models::{App, AppState};
+use crate::models::App;
 
 /// Create a new app
 #[instrument]
@@ -27,7 +25,7 @@ pub async fn execute(app_name: &str) -> Result<()> {
     let port = config::get_next_available_port(&pool).await?;
 
     // Create app
-    let mut app = App::new(app_name, port);
+    let app = App::new(app_name, port);
 
     // Create app directory
     let app_dir = config::get_app_dir(app_name)?;
