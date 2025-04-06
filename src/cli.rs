@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::commands::{
-    app_command::{create, deploy, logs, start, status, stop},
+    app_command::{app_env, create, deploy, logs, start, status, stop},
     server_command::serve,
 };
 
@@ -28,6 +28,21 @@ enum Commands {
 
         /// Path to the binary file
         binary_path: String,
+    },
+
+    /// Deploy a binary to an app
+    Env {
+        /// Name of the app
+        app_name: String,
+
+        /// Environment variable key
+        key: String,
+
+        /// Environment variable value
+        value: String,
+
+        #[arg(long)]
+        delete: bool,
     },
 
     /// Start an app
@@ -83,6 +98,12 @@ pub async fn run() -> Result<()> {
             app_name,
             binary_path,
         } => deploy::execute(&app_name, &binary_path).await,
+        Commands::Env {
+            app_name,
+            key,
+            value,
+            delete,
+        } => app_env::set_env(&app_name, &key, &value, delete).await,
         Commands::Start { app_name } => start::execute(&app_name).await,
         Commands::Stop { app_name } => stop::execute(&app_name).await,
         Commands::Status { app_name } => status::execute(app_name.as_deref()).await,
