@@ -1,4 +1,4 @@
-use binarydrop::cli;
+use bindrop::cli;
 use tracing::info;
 
 #[tokio::main]

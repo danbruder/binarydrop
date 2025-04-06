@@ -65,7 +65,7 @@ enum Commands {
     /// Start the BinaryDrop server
     Serve {
         /// Host to bind to
-        #[arg(long, default_value = "127.0.0.1")]
+        #[arg(long, default_value = "0.0.0.0")]
         host: String,
 
         /// Port to listen on
