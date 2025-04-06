@@ -13,8 +13,8 @@ echo "Pushing..."
 scp ./target/x86_64-unknown-linux-musl/release/bindrop bindrop@$IP:/opt/bindrop/bindrop.new
 
 echo "Deploying..."
-ssh bindrop@$IP -t 'systemctl stop bindrop'
+ssh root@$IP -t 'systemctl stop bindrop'
 ssh bindrop@$IP -t 'mv /opt/bindrop/bindrop.new /opt/bindrop/bindrop'
-ssh bindrop@$IP -t 'systemctl restart bindrop'
+ssh root@$IP -t 'systemctl restart bindrop'
 
 echo "Done!"
