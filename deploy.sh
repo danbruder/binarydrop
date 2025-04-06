@@ -12,7 +12,9 @@ TARGET_CC=x86_64-linux-musl-gcc cargo build --release --target x86_64-unknown-li
 echo "Pushing..."
 scp ./target/x86_64-unknown-linux-musl/release/bindrop bindrop@$IP:/opt/bindrop/bindrop.new
 
-# echo "Deploying..."
-# ssh root@$IP -t 'systemctl stop bindrop && mv /opt/bindrop/bindrop.new /opt/bindrop/bindrop && systemctl restart bindrop'
+echo "Deploying..."
+ssh bindrop@$IP -t 'systemctl stop bindrop'
+ssh bindrop@$IP -t 'mv /opt/bindrop/bindrop.new /opt/bindrop/bindrop'
+ssh bindrop@$IP -t 'systemctl restart bindrop'
 
 echo "Done!"
