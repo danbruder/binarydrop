@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::path::PathBuf;
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 
 use crate::config;
 use crate::models::{App, AppState};
@@ -53,20 +53,30 @@ pub async fn init_pool() -> Result<Pool<Sqlite>> {
 
 /// App database operations
 pub mod apps {
+
     use super::*;
-    use sqlx::Row;
-    use std::collections::HashMap;
-    use tracing::instrument;
 
     /// Save an app to the database
-    #[instrument(skip(pool))]
+    #[instrument(skip(pool, app))]
     pub async fn save(pool: &Pool<Sqlite>, app: &App) -> Result<()> {
+        // Serialize health check to JSON if present
+        let health_check_json = match &app.health_check {
+            Some(hc) => Some(serde_json::to_string(hc)?),
+            None => None,
+        };
+
+        // Serialize environment variables to JSON
         let env_json = serde_json::to_string(&app.environment)?;
 
-        sqlx::query(
+        // Update or insert
+        let result = sqlx::query!(
             r#"
-            INSERT INTO apps (id, name, created_at, updated_at, state, binary_path, binary_hash, port, environment, process_id, host)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO apps (
+                id, name, created_at, updated_at, state, binary_path, binary_hash, 
+                port, environment, process_id, host, restart_policy, max_restarts,
+                restart_count, last_exit_code, last_exit_time, startup_timeout,
+                shutdown_timeout, health_check
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 updated_at = excluded.updated_at,
@@ -76,23 +86,44 @@ pub mod apps {
                 port = excluded.port,
                 environment = excluded.environment,
                 process_id = excluded.process_id,
-                host = excluded.host
+                host = excluded.host,
+                restart_policy = excluded.restart_policy,
+                max_restarts = excluded.max_restarts,
+                restart_count = excluded.restart_count,
+                last_exit_code = excluded.last_exit_code,
+                last_exit_time = excluded.last_exit_time,
+                startup_timeout = excluded.startup_timeout,
+                shutdown_timeout = excluded.shutdown_timeout,
+                health_check = excluded.health_check
             "#,
+            app.id,
+            app.name,
+            app.created_at,
+            app.updated_at,
+            app.state.to_string(),
+            app.binary_path,
+            app.binary_hash,
+            app.port,
+            env_json,
+            app.process_id,
+            app.host,
+            app.restart_policy.to_string(),
+            app.max_restarts,
+            app.restart_count,
+            app.last_exit_code,
+            app.last_exit_time,
+            app.startup_timeout,
+            app.shutdown_timeout,
+            health_check_json,
         )
-        .bind(&app.id)
-        .bind(&app.name)
-        .bind(app.created_at)
-        .bind(app.updated_at)
-        .bind(app.state.to_string())
-        .bind(&app.binary_path)
-        .bind(&app.binary_hash)
-        .bind(app.port)
-        .bind(env_json)
-        .bind(app.process_id.map(|pid| pid as i64))
-        .bind(&app.host)
         .execute(pool)
-        .await
-        .context("Failed to save app to database")?;
+        .await?;
+
+        debug!(
+            "Saved app '{}' (affected rows: {})",
+            app.name,
+            result.rows_affected()
+        );
 
         Ok(())
     }
@@ -100,19 +131,36 @@ pub mod apps {
     /// Get an app by name
     #[instrument(skip(pool))]
     pub async fn get_by_name(pool: &Pool<Sqlite>, name: &str) -> Result<Option<App>> {
-        let row = sqlx::query("SELECT * FROM apps WHERE name = ?")
-            .bind(name)
-            .fetch_optional(pool)
-            .await
-            .context("Failed to query app from database")?;
+        let record = sqlx::query!(
+            r#"
+            SELECT id, name, created_at, updated_at, state, binary_path, binary_hash,
+                   port, environment, process_id, host, restart_policy, max_restarts,
+                   restart_count, last_exit_code, last_exit_time, startup_timeout,
+                   shutdown_timeout, health_check
+            FROM apps 
+            WHERE name = ?
+            "#,
+            name
+        )
+        .fetch_optional(pool)
+        .await?;
 
-        match row {
-            Some(row) => {
-                let env_json: String = row.get("environment");
-                let environment: HashMap<String, String> = serde_json::from_str(&env_json)?;
+        match record {
+            Some(record) => {
+                // Parse environment JSON
+                let environment = serde_json::from_str(&record.environment)
+                    .context("Failed to parse environment JSON")?;
 
-                let state_str: String = row.get("state");
-                let state = match state_str.as_str() {
+                // Parse health check JSON if present
+                let health_check = match record.health_check {
+                    Some(json) => Some(
+                        serde_json::from_str(&json).context("Failed to parse health check JSON")?,
+                    ),
+                    None => None,
+                };
+
+                // Parse app state
+                let state = match record.state.as_str() {
                     "created" => AppState::Created,
                     "deployed" => AppState::Deployed,
                     "starting" => AppState::Starting,
@@ -120,45 +168,146 @@ pub mod apps {
                     "stopping" => AppState::Stopping,
                     "stopped" => AppState::Stopped,
                     "failed" => AppState::Failed,
+                    "restarting" => AppState::Restarting,
+                    "crashed" => AppState::Crashed,
                     _ => AppState::Created,
                 };
 
-                let process_id: Option<i64> = row.get("process_id");
+                // Parse restart policy
+                let restart_policy = match record.restart_policy.as_str() {
+                    "always" => crate::models::RestartPolicy::Always,
+                    "on-failure" => crate::models::RestartPolicy::OnFailure,
+                    "never" => crate::models::RestartPolicy::Never,
+                    _ => crate::models::RestartPolicy::OnFailure,
+                };
 
                 Ok(Some(App {
-                    id: row.get("id"),
-                    name: row.get("name"),
-                    created_at: row.get("created_at"),
-                    updated_at: row.get("updated_at"),
+                    id: record.id,
+                    name: record.name,
+                    created_at: record.created_at.parse()?,
+                    updated_at: record.updated_at.parse()?,
                     state,
-                    binary_path: row.get("binary_path"),
-                    binary_hash: row.get("binary_hash"),
-                    port: row.get("port"),
+                    binary_path: record.binary_path,
+                    binary_hash: record.binary_hash,
+                    port: record.port as u16,
                     environment,
-                    process_id: process_id.map(|pid| pid as u32),
-                    host: row.get("host"),
+                    process_id: record.process_id.map(|id| id as u32),
+                    host: record.host,
+                    restart_policy,
+                    max_restarts: record.max_restarts.map(|m| m as u32),
+                    restart_count: record.restart_count as u32,
+                    last_exit_code: record.last_exit_code,
+                    last_exit_time: record.last_exit_time.map(|t| t.parse().unwrap()),
+                    startup_timeout: record.startup_timeout as u32,
+                    shutdown_timeout: record.shutdown_timeout as u32,
+                    health_check,
                 }))
             }
             None => Ok(None),
         }
     }
 
-    /// List all apps
+    /// Get all apps with a specific state
     #[instrument(skip(pool))]
-    pub async fn list_all(pool: &Pool<Sqlite>) -> Result<Vec<App>> {
-        let rows = sqlx::query("SELECT * FROM apps ORDER BY name")
-            .fetch_all(pool)
-            .await
-            .context("Failed to query apps from database")?;
+    pub async fn get_by_state(pool: &Pool<Sqlite>, state: AppState) -> Result<Vec<App>> {
+        let state_str = state.to_string();
 
-        let mut apps = Vec::with_capacity(rows.len());
+        let records = sqlx::query!(
+            r#"
+            SELECT id, name, created_at, updated_at, state, binary_path, binary_hash,
+                   port, environment, process_id, host, restart_policy, max_restarts,
+                   restart_count, last_exit_code, last_exit_time, startup_timeout,
+                   shutdown_timeout, health_check
+            FROM apps 
+            WHERE state = ?
+            "#,
+            state_str
+        )
+        .fetch_all(pool)
+        .await?;
 
-        for row in rows {
-            let env_json: String = row.get("environment");
-            let environment: HashMap<String, String> = serde_json::from_str(&env_json)?;
+        let mut apps = Vec::new();
 
-            let state_str: String = row.get("state");
-            let state = match state_str.as_str() {
+        for record in records {
+            // Parse environment JSON
+            let environment = serde_json::from_str(&record.environment)
+                .context("Failed to parse environment JSON")?;
+
+            // Parse health check JSON if present
+            let health_check = match record.health_check {
+                Some(json) => {
+                    Some(serde_json::from_str(&json).context("Failed to parse health check JSON")?)
+                }
+                None => None,
+            };
+
+            // Parse restart policy
+            let restart_policy = match record.restart_policy.as_str() {
+                "always" => crate::models::RestartPolicy::Always,
+                "on-failure" => crate::models::RestartPolicy::OnFailure,
+                "never" => crate::models::RestartPolicy::Never,
+                _ => crate::models::RestartPolicy::OnFailure,
+            };
+
+            apps.push(App {
+                id: record.id,
+                name: record.name,
+                created_at: record.created_at.parse()?,
+                updated_at: record.updated_at.parse()?,
+                state,
+                binary_path: record.binary_path,
+                binary_hash: record.binary_hash,
+                port: record.port as u16,
+                environment,
+                process_id: record.process_id.map(|id| id as u32),
+                host: record.host,
+                restart_policy,
+                max_restarts: record.max_restarts.map(|m| m as u32),
+                restart_count: record.restart_count as u32,
+                last_exit_code: record.last_exit_code,
+                last_exit_time: record.last_exit_time.map(|t| t.parse().unwrap()),
+                startup_timeout: record.startup_timeout as u32,
+                shutdown_timeout: record.shutdown_timeout as u32,
+                health_check,
+            });
+        }
+
+        Ok(apps)
+    }
+
+    /// Get all apps
+    #[instrument(skip(pool))]
+    pub async fn get_all(pool: &Pool<Sqlite>) -> Result<Vec<App>> {
+        let records = sqlx::query!(
+            r#"
+            SELECT id, name, created_at, updated_at, state, binary_path, binary_hash,
+                   port, environment, process_id, host, restart_policy, max_restarts,
+                   restart_count, last_exit_code, last_exit_time, startup_timeout,
+                   shutdown_timeout, health_check
+            FROM apps 
+            ORDER BY name
+            "#
+        )
+        .fetch_all(pool)
+        .await?;
+
+        let mut apps = Vec::new();
+
+        for record in records {
+            // Parse environment JSON
+            let environment = serde_json::from_str(&record.environment)
+                .context("Failed to parse environment JSON")?;
+
+            // Parse health check JSON if present
+            let health_check = match record.health_check {
+                Some(json) => {
+                    Some(serde_json::from_str(&json).context("Failed to parse health check JSON")?)
+                }
+                None => None,
+            };
+
+            // Parse app state
+            let state = match record.state.as_str() {
                 "created" => AppState::Created,
                 "deployed" => AppState::Deployed,
                 "starting" => AppState::Starting,
@@ -166,38 +315,204 @@ pub mod apps {
                 "stopping" => AppState::Stopping,
                 "stopped" => AppState::Stopped,
                 "failed" => AppState::Failed,
+                "restarting" => AppState::Restarting,
+                "crashed" => AppState::Crashed,
                 _ => AppState::Created,
             };
 
-            let process_id: Option<i64> = row.get("process_id");
+            // Parse restart policy
+            let restart_policy = match record.restart_policy.as_str() {
+                "always" => crate::models::RestartPolicy::Always,
+                "on-failure" => crate::models::RestartPolicy::OnFailure,
+                "never" => crate::models::RestartPolicy::Never,
+                _ => crate::models::RestartPolicy::OnFailure,
+            };
 
             apps.push(App {
-                id: row.get("id"),
-                name: row.get("name"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
+                id: record.id,
+                name: record.name,
+                created_at: record.created_at.parse()?,
+                updated_at: record.updated_at.parse()?,
                 state,
-                binary_path: row.get("binary_path"),
-                binary_hash: row.get("binary_hash"),
-                port: row.get("port"),
+                binary_path: record.binary_path,
+                binary_hash: record.binary_hash,
+                port: record.port as u16,
                 environment,
-                process_id: process_id.map(|pid| pid as u32),
-                host: row.get("host"),
+                process_id: record.process_id.map(|id| id as u32),
+                host: record.host,
+                restart_policy,
+                max_restarts: record.max_restarts.map(|m| m as u32),
+                restart_count: record.restart_count as u32,
+                last_exit_code: record.last_exit_code,
+                last_exit_time: record.last_exit_time.map(|t| t.parse().unwrap()),
+                startup_timeout: record.startup_timeout as u32,
+                shutdown_timeout: record.shutdown_timeout as u32,
+                health_check,
             });
         }
 
         Ok(apps)
     }
+}
 
-    /// Delete an app by name
-    #[instrument(skip(pool))]
-    pub async fn delete_by_name(pool: &Pool<Sqlite>, name: &str) -> Result<bool> {
-        let result = sqlx::query("DELETE FROM apps WHERE name = ?")
-            .bind(name)
+use anyhow::{Context, Result};
+use sqlx::{Pool, Sqlite};
+use tracing::instrument;
+
+use crate::models::ProcessHistory;
+
+/// Process history repository
+pub mod process_history {
+    use super::*;
+
+    /// Save a process history entry
+    #[instrument(skip(pool, history))]
+    pub async fn save(pool: &Pool<Sqlite>, history: &ProcessHistory) -> Result<()> {
+        if history.ended_at.is_none() {
+            // Insert new entry
+            sqlx::query!(
+                r#"
+                INSERT INTO process_history (
+                    id, app_id, started_at, ended_at, exit_code, exit_reason
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                "#,
+                history.id,
+                history.app_id,
+                history.started_at,
+                history.ended_at,
+                history.exit_code,
+                history.exit_reason
+            )
             .execute(pool)
             .await
-            .context("Failed to delete app from database")?;
+            .context("Failed to insert process history")?;
+        } else {
+            // Update existing entry
+            sqlx::query!(
+                r#"
+                UPDATE process_history 
+                SET ended_at = ?, exit_code = ?, exit_reason = ?
+                WHERE id = ?
+                "#,
+                history.ended_at,
+                history.exit_code,
+                history.exit_reason,
+                history.id
+            )
+            .execute(pool)
+            .await
+            .context("Failed to update process history")?;
+        }
 
-        Ok(result.rows_affected() > 0)
+        Ok(())
+    }
+
+    /// Get process history for an app
+    #[instrument(skip(pool))]
+    pub async fn get_by_app_id(pool: &Pool<Sqlite>, app_id: &str) -> Result<Vec<ProcessHistory>> {
+        let records = sqlx::query!(
+            r#"
+            SELECT id, app_id, started_at, ended_at, exit_code, exit_reason
+            FROM process_history
+            WHERE app_id = ?
+            ORDER BY started_at DESC
+            "#,
+            app_id
+        )
+        .fetch_all(pool)
+        .await
+        .context("Failed to get process history")?;
+
+        let mut history_entries = Vec::new();
+
+        for record in records {
+            history_entries.push(ProcessHistory {
+                id: record.id,
+                app_id: record.app_id,
+                started_at: record.started_at.parse()?,
+                ended_at: record.ended_at.map(|dt| dt.parse().unwrap_or_default()),
+                exit_code: record.exit_code,
+                exit_reason: record.exit_reason,
+            });
+        }
+
+        Ok(history_entries)
+    }
+
+    /// Get recent process history entries
+    #[instrument(skip(pool))]
+    pub async fn get_recent(pool: &Pool<Sqlite>, limit: i64) -> Result<Vec<ProcessHistory>> {
+        let records = sqlx::query!(
+            r#"
+            SELECT id, app_id, started_at, ended_at, exit_code, exit_reason
+            FROM process_history
+            ORDER BY started_at DESC
+            LIMIT ?
+            "#,
+            limit
+        )
+        .fetch_all(pool)
+        .await
+        .context("Failed to get recent process history")?;
+
+        let mut history_entries = Vec::new();
+
+        for record in records {
+            history_entries.push(ProcessHistory {
+                id: record.id,
+                app_id: record.app_id,
+                started_at: record.started_at.parse()?,
+                ended_at: record.ended_at.map(|dt| dt.parse().unwrap_or_default()),
+                exit_code: record.exit_code,
+                exit_reason: record.exit_reason,
+            });
+        }
+
+        Ok(history_entries)
+    }
+
+    /// Get a process history entry by ID
+    #[instrument(skip(pool))]
+    pub async fn get_by_id(pool: &Pool<Sqlite>, id: &str) -> Result<Option<ProcessHistory>> {
+        let record = sqlx::query!(
+            r#"
+            SELECT id, app_id, started_at, ended_at, exit_code, exit_reason
+            FROM process_history
+            WHERE id = ?
+            "#,
+            id
+        )
+        .fetch_optional(pool)
+        .await
+        .context("Failed to get process history by ID")?;
+
+        match record {
+            Some(record) => Ok(Some(ProcessHistory {
+                id: record.id,
+                app_id: record.app_id,
+                started_at: record.started_at.parse()?,
+                ended_at: record.ended_at.map(|dt| dt.parse().unwrap_or_default()),
+                exit_code: record.exit_code,
+                exit_reason: record.exit_reason,
+            })),
+            None => Ok(None),
+        }
+    }
+
+    /// Delete process history for an app
+    #[instrument(skip(pool))]
+    pub async fn delete_by_app_id(pool: &Pool<Sqlite>, app_id: &str) -> Result<u64> {
+        let result = sqlx::query!(
+            r#"
+            DELETE FROM process_history
+            WHERE app_id = ?
+            "#,
+            app_id
+        )
+        .execute(pool)
+        .await
+        .context("Failed to delete process history")?;
+
+        Ok(result.rows_affected())
     }
 }

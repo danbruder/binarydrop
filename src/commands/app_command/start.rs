@@ -1,20 +1,18 @@
 use anyhow::{anyhow, Context, Result};
-use chrono::Utc;
-use std::process::{Command, Stdio};
 use tracing::{info, instrument};
 
-use crate::config;
 use crate::db;
 use crate::models::AppState;
+use crate::supervisor::SUPERVISOR;
 
-/// Start an app
+/// Start an app using the supervisor
 #[instrument]
 pub async fn execute(app_name: &str) -> Result<()> {
     // Connect to database
     let pool = db::init_pool().await?;
 
     // Get app
-    let mut app = db::apps::get_by_name(&pool, app_name)
+    let app = db::apps::get_by_name(&pool, app_name)
         .await?
         .ok_or_else(|| anyhow!("App '{}' not found", app_name))?;
 
@@ -25,55 +23,42 @@ pub async fn execute(app_name: &str) -> Result<()> {
     }
 
     // Check if app has been deployed
-    let binary_path = match &app.binary_path {
-        Some(path) => path,
-        None => return Err(anyhow!("App '{}' has not been deployed yet", app_name)),
-    };
-
-    info!("Starting app '{}' from binary {}", app_name, binary_path);
-
-    // Update app state
-    app.state = AppState::Starting;
-    app.updated_at = Utc::now();
-    db::apps::save(&pool, &app).await?;
-
-    // Get log file path
-    let log_path = config::get_app_log_path(app_name)?;
-    let log_file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-        .context(format!("Failed to open log file: {}", log_path.display()))?;
-
-    // Start process
-    let mut cmd = Command::new(binary_path);
-
-    // Add environment variables
-    cmd.env("PORT", app.port.to_string());
-    for (key, value) in &app.environment {
-        cmd.env(key, value);
+    if app.binary_path.is_none() {
+        return Err(anyhow!("App '{}' has not been deployed yet", app_name));
     }
 
-    // Configure I/O
-    cmd.stdout(Stdio::from(log_file.try_clone()?))
-        .stderr(Stdio::from(log_file));
+    // Get the supervisor from global state
+    let supervisor = SUPERVISOR
+        .get()
+        .ok_or_else(|| anyhow!("Process supervisor not initialized"))?;
 
-    // Start the process
-    let child = cmd
-        .spawn()
-        .context(format!("Failed to start app process: {}", binary_path))?;
+    // Start the app through the supervisor
+    info!("Sending start request for app '{}'", app_name);
+    supervisor.start_app(app_name).await?;
 
-    // Update app with process ID
-    app.process_id = Some(child.id());
-    app.state = AppState::Running;
-    app.updated_at = Utc::now();
+    // Wait a bit for the app to start
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-    // Save app to database
-    db::apps::save(&pool, &app).await?;
+    // Fetch the app again to get the updated state
+    let app = db::apps::get_by_name(&pool, app_name)
+        .await?
+        .ok_or_else(|| anyhow!("App '{}' not found", app_name))?;
 
-    info!("Started app '{}' with PID {}", app_name, child.id());
-    println!("Successfully started app '{}'", app_name);
-    println!("App is now available at http://localhost:{}", app.port);
+    if app.state == AppState::Running {
+        println!("Successfully started app '{}'", app_name);
+        println!("App is now available at http://{}:{}", app.host, app.port);
+
+        // Print restart policy information
+        println!("Restart policy: {}", app.restart_policy);
+        if let Some(max) = app.max_restarts {
+            println!("Maximum restarts: {}", max);
+        } else {
+            println!("Maximum restarts: unlimited");
+        }
+    } else {
+        println!("App '{}' is starting...", app_name);
+        println!("Check status with: binarydrop status {}", app_name);
+    }
 
     Ok(())
 }
