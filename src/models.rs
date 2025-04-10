@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+use std::default::Default;
+use uuid::Uuid;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct App {
     pub id: String,
@@ -15,7 +19,7 @@ pub struct App {
     pub restart_policy: RestartPolicy,
     pub max_restarts: Option<u32>,
     pub restart_count: u32,
-    pub last_exit_code: Option<i32>,
+    pub last_exit_code: Option<i64>,
     pub last_exit_time: Option<DateTime<Utc>>,
     pub startup_timeout: u32,  // Seconds
     pub shutdown_timeout: u32, // Seconds
@@ -45,7 +49,7 @@ impl App {
             last_exit_time: None,
             startup_timeout: 30,
             shutdown_timeout: 10,
-            health_check: None,
+            health_check: Some(HealthCheck::default()),
         }
     }
 
@@ -141,6 +145,21 @@ pub enum HealthCheckType {
     },
 }
 
+impl Default for HealthCheck {
+    fn default() -> Self {
+        Self {
+            check_type: HealthCheckType::HttpGet {
+                path: "/".into(),
+                expected_status: 200,
+            },
+            interval: 10,
+            timeout: 10,
+            retries: 10,
+            start_period: 10,
+        }
+    }
+}
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -150,7 +169,7 @@ pub struct ProcessHistory {
     pub app_id: String,
     pub started_at: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
-    pub exit_code: Option<i32>,
+    pub exit_code: Option<i64>,
     pub exit_reason: Option<String>,
 }
 

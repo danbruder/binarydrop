@@ -1,7 +1,7 @@
 -- migrations/20250403_initial.sql
 -- Create apps table
 CREATE TABLE IF NOT EXISTS apps (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY NOT NULL,
     name TEXT UNIQUE NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,

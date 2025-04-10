@@ -9,6 +9,7 @@ use tracing::{error, info, instrument};
 
 use crate::db;
 use crate::models::AppState;
+use crate::supervisor;
 
 /// Shared state for the proxy server
 struct ProxyState {
@@ -20,6 +21,7 @@ struct ProxyState {
 pub async fn execute(host: &str, port: u16) -> Result<()> {
     // Connect to database
     let pool = db::init_pool().await?;
+    supervisor::init(pool.clone()).await?;
 
     // Create shared state
     let state = Arc::new(RwLock::new(ProxyState { db_pool: pool }));
@@ -92,7 +94,7 @@ async fn handle_request(
 async fn admin_interface(state: Arc<RwLock<ProxyState>>) -> Response<Body> {
     // Get all apps
     let state_read = state.read().await;
-    let apps = match db::apps::list_all(&state_read.db_pool).await {
+    let apps = match db::apps::get_all(&state_read.db_pool).await {
         Ok(apps) => apps,
         Err(e) => {
             return Response::builder()

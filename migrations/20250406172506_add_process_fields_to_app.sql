@@ -12,7 +12,7 @@ ALTER TABLE apps ADD COLUMN health_check TEXT NULL;
 
 -- Create a table for process history
 CREATE TABLE IF NOT EXISTS process_history (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY NOT NULL,
     app_id TEXT NOT NULL,
     started_at TIMESTAMP NOT NULL,
     ended_at TIMESTAMP NULL,

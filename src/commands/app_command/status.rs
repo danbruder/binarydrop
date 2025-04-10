@@ -1,10 +1,9 @@
 use anyhow::{anyhow, Result};
 use chrono::Utc;
-use prettytable::{cell, format, row, Table};
+use prettytable::{format, row, Table};
 use tracing::instrument;
 
 use crate::db;
-use crate::models::AppState;
 use crate::supervisor::SUPERVISOR;
 
 /// Get status of all apps or a specific app

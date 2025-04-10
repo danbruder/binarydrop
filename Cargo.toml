@@ -28,6 +28,8 @@ toml = "0.8"
 config = "0.13"
 sha2 = "0.10"
 hex = "0.4"
+once_cell = "1.21.3"
+prettytable = "0.10.0"
 
 [[bin]]
 name = "bindrop"

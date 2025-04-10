@@ -3,6 +3,8 @@ use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::path::PathBuf;
 use tracing::{debug, info, instrument};
 
+use crate::models::ProcessHistory;
+
 use crate::config;
 use crate::models::{App, AppState};
 
@@ -69,6 +71,8 @@ pub mod apps {
         let env_json = serde_json::to_string(&app.environment)?;
 
         // Update or insert
+        let state = app.state.to_string();
+        let restart_policy = app.restart_policy.to_string();
         let result = sqlx::query!(
             r#"
             INSERT INTO apps (
@@ -100,14 +104,14 @@ pub mod apps {
             app.name,
             app.created_at,
             app.updated_at,
-            app.state.to_string(),
+            state,
             app.binary_path,
             app.binary_hash,
             app.port,
             env_json,
             app.process_id,
             app.host,
-            app.restart_policy.to_string(),
+            restart_policy,
             app.max_restarts,
             app.restart_count,
             app.last_exit_code,
@@ -197,7 +201,7 @@ pub mod apps {
                     max_restarts: record.max_restarts.map(|m| m as u32),
                     restart_count: record.restart_count as u32,
                     last_exit_code: record.last_exit_code,
-                    last_exit_time: record.last_exit_time.map(|t| t.parse().unwrap()),
+                    last_exit_time: record.last_exit_time.map(|t| t.and_utc()),
                     startup_timeout: record.startup_timeout as u32,
                     shutdown_timeout: record.shutdown_timeout as u32,
                     health_check,
@@ -265,7 +269,7 @@ pub mod apps {
                 max_restarts: record.max_restarts.map(|m| m as u32),
                 restart_count: record.restart_count as u32,
                 last_exit_code: record.last_exit_code,
-                last_exit_time: record.last_exit_time.map(|t| t.parse().unwrap()),
+                last_exit_time: record.last_exit_time.map(|t| t.and_utc()),
                 startup_timeout: record.startup_timeout as u32,
                 shutdown_timeout: record.shutdown_timeout as u32,
                 health_check,
@@ -344,7 +348,7 @@ pub mod apps {
                 max_restarts: record.max_restarts.map(|m| m as u32),
                 restart_count: record.restart_count as u32,
                 last_exit_code: record.last_exit_code,
-                last_exit_time: record.last_exit_time.map(|t| t.parse().unwrap()),
+                last_exit_time: record.last_exit_time.map(|t| t.and_utc()),
                 startup_timeout: record.startup_timeout as u32,
                 shutdown_timeout: record.shutdown_timeout as u32,
                 health_check,
@@ -354,12 +358,6 @@ pub mod apps {
         Ok(apps)
     }
 }
-
-use anyhow::{Context, Result};
-use sqlx::{Pool, Sqlite};
-use tracing::instrument;
-
-use crate::models::ProcessHistory;
 
 /// Process history repository
 pub mod process_history {
@@ -429,8 +427,8 @@ pub mod process_history {
             history_entries.push(ProcessHistory {
                 id: record.id,
                 app_id: record.app_id,
-                started_at: record.started_at.parse()?,
-                ended_at: record.ended_at.map(|dt| dt.parse().unwrap_or_default()),
+                started_at: record.started_at.and_utc(),
+                ended_at: record.ended_at.map(|dt| dt.and_utc()),
                 exit_code: record.exit_code,
                 exit_reason: record.exit_reason,
             });
@@ -461,8 +459,8 @@ pub mod process_history {
             history_entries.push(ProcessHistory {
                 id: record.id,
                 app_id: record.app_id,
-                started_at: record.started_at.parse()?,
-                ended_at: record.ended_at.map(|dt| dt.parse().unwrap_or_default()),
+                started_at: record.started_at.and_utc(),
+                ended_at: record.ended_at.map(|dt| dt.and_utc()),
                 exit_code: record.exit_code,
                 exit_reason: record.exit_reason,
             });
@@ -490,8 +488,8 @@ pub mod process_history {
             Some(record) => Ok(Some(ProcessHistory {
                 id: record.id,
                 app_id: record.app_id,
-                started_at: record.started_at.parse()?,
-                ended_at: record.ended_at.map(|dt| dt.parse().unwrap_or_default()),
+                started_at: record.started_at.and_utc(),
+                ended_at: record.ended_at.map(|dt| dt.and_utc()),
                 exit_code: record.exit_code,
                 exit_reason: record.exit_reason,
             })),

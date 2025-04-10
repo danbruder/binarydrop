@@ -14,6 +14,26 @@ use crate::config;
 use crate::db;
 use crate::models::{App, AppState, HealthCheckType, ProcessHistory};
 
+use once_cell::sync::OnceCell;
+
+// Global supervisor instance
+pub static SUPERVISOR: OnceCell<Supervisor> = OnceCell::new();
+
+/// Initialize the process supervisor
+pub async fn init(pool: Pool<Sqlite>) -> Result<()> {
+    // Create supervisor
+    let supervisor = Supervisor::new(pool).await?;
+
+    // Store in global state
+    if SUPERVISOR.set(supervisor).is_err() {
+        return Err(anyhow::anyhow!("Supervisor already initialized"));
+    }
+
+    info!("Process supervisor initialized");
+
+    Ok(())
+}
+
 // Message types for the supervisor channel
 #[derive(Debug)]
 pub enum SupervisorMessage {
@@ -21,7 +41,7 @@ pub enum SupervisorMessage {
     Stop(String),             // App name
     Restart(String),          // App name
     CheckHealth(String),      // App name
-    ProcessExit(String, i32), // App name, exit code
+    ProcessExit(String, i64), // App name, exit code
 }
 
 pub struct Supervisor {
@@ -293,7 +313,7 @@ impl Supervisor {
                             info!("App '{}' exited with status: {:?}", app_name, status);
 
                             // Update process history
-                            let exit_code = status.code();
+                            let exit_code = status.code().map(|c| c as i64);
                             Self::update_process_history(
                                 db_pool,
                                 &app,
@@ -368,7 +388,7 @@ impl Supervisor {
         db_pool: &Pool<Sqlite>,
         processes: &Arc<Mutex<HashMap<String, RunningProcess>>>,
         app_name: &str,
-        exit_code: i32,
+        exit_code: i64,
     ) -> Result<()> {
         // Get app
         let app = db::apps::get_by_name(db_pool, app_name)
@@ -439,7 +459,7 @@ impl Supervisor {
     async fn update_process_history(
         db_pool: &Pool<Sqlite>,
         app: &App,
-        exit_code: Option<i32>,
+        exit_code: Option<i64>,
         exit_reason: &str,
     ) -> Result<()> {
         // Find the latest history entry for this app
@@ -630,7 +650,7 @@ impl Supervisor {
             .map_err(|e| anyhow!("Failed to send health check message: {}", e))
     }
 
-    pub async fn notify_process_exit(&self, app_name: &str, exit_code: i32) -> Result<()> {
+    pub async fn notify_process_exit(&self, app_name: &str, exit_code: i64) -> Result<()> {
         self.tx
             .send(SupervisorMessage::ProcessExit(
                 app_name.to_string(),
@@ -683,7 +703,7 @@ pub struct AppStats {
     pub uptime: Option<Duration>,
     pub pid: Option<u32>,
     pub restart_count: u32,
-    pub last_exit_code: Option<i32>,
+    pub last_exit_code: Option<i64>,
     pub last_exit_time: Option<chrono::DateTime<Utc>>,
     pub total_runs: u32,
 }
