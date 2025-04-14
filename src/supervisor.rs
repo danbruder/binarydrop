@@ -21,6 +21,7 @@ pub static SUPERVISOR: OnceCell<Supervisor> = OnceCell::new();
 
 /// Initialize the process supervisor
 pub async fn init(pool: Pool<Sqlite>) -> Result<()> {
+    info!("Initializing process supervisor...");
     // Create supervisor
     let supervisor = Supervisor::new(pool).await?;
 
@@ -117,6 +118,8 @@ impl Supervisor {
                 }
             }
         });
+
+        info!("Supervisor task spawned");
 
         Ok(Self {
             tx,
