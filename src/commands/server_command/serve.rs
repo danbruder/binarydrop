@@ -52,6 +52,7 @@ struct ProxyState {
 pub async fn execute(host: &str, port: u16) -> Result<()> {
     // Connect to database
     let pool = db::init_pool().await?;
+    let _ = crate::supervisor::init(pool.clone());
 
     // Create shared state
     let proxy_state = Arc::new(RwLock::new(ProxyState {
