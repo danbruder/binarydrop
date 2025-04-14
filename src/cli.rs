@@ -104,8 +104,44 @@ pub async fn run() -> Result<()> {
             value,
             delete,
         } => app_env::set_env(&app_name, &key, &value, delete).await,
-        Commands::Start { app_name } => start::execute(&app_name).await,
-        Commands::Stop { app_name } => stop::execute(&app_name).await,
+        Commands::Start { app_name } => {
+            // Post to an endpoint
+            let client = reqwest::Client::new();
+            let url = format!(
+                "http://localhost:8080/____bindrop_api/apps/{}/start",
+                app_name
+            );
+            let response = client
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .send()
+                .await?;
+            if response.status().is_success() {
+                println!("App {} started successfully", app_name);
+            } else {
+                println!("Failed to start app {}: {}", app_name, response.status());
+            }
+            Ok(())
+        }
+        Commands::Stop { app_name } => {
+            // Post to an endpoint
+            let client = reqwest::Client::new();
+            let url = format!(
+                "http://localhost:8080/____bindrop_api/apps/{}/stop",
+                app_name
+            );
+            let response = client
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .send()
+                .await?;
+            if response.status().is_success() {
+                println!("App {} stopped successfully", app_name);
+            } else {
+                println!("Failed to stopped app {}: {}", app_name, response.status());
+            }
+            Ok(())
+        }
         Commands::Status { app_name } => status::execute(app_name.as_deref()).await,
         Commands::Logs {
             app_name,

@@ -37,7 +37,7 @@ pub async fn execute(app_name: Option<&str>) -> Result<()> {
         }
         None => {
             // Show status for all apps
-            let apps = db::apps::list_all(&pool).await?;
+            let apps = db::apps::get_all(&pool).await?;
 
             if apps.is_empty() {
                 println!("No apps found");
