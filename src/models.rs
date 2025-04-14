@@ -40,7 +40,7 @@ impl App {
             port,
             environment: HashMap::new(),
             process_id: None,
-            host: "localhost".to_string(),
+            host: "0.0.0.0".to_string(),
             // New field defaults
             restart_policy: RestartPolicy::OnFailure,
             max_restarts: Some(5),

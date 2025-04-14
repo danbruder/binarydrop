@@ -11,6 +11,7 @@ use tracing::{error, info, instrument};
 use crate::commands::app_command::{deploy, start, stop};
 use crate::db;
 use crate::models::AppState;
+use crate::supervisor;
 use tokio::sync::oneshot;
 
 // Message types for communication between servers
@@ -52,7 +53,7 @@ struct ProxyState {
 pub async fn execute(host: &str, port: u16) -> Result<()> {
     // Connect to database
     let pool = db::init_pool().await?;
-    let _ = crate::supervisor::init(pool.clone());
+    supervisor::init(pool.clone()).await?;
 
     // Create shared state
     let proxy_state = Arc::new(RwLock::new(ProxyState {

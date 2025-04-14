@@ -20,6 +20,7 @@ use once_cell::sync::OnceCell;
 pub static SUPERVISOR: OnceCell<Supervisor> = OnceCell::new();
 
 /// Initialize the process supervisor
+#[instrument]
 pub async fn init(pool: Pool<Sqlite>) -> Result<()> {
     info!("Initializing process supervisor...");
     // Create supervisor
@@ -58,6 +59,7 @@ struct RunningProcess {
 }
 
 impl Supervisor {
+    #[instrument]
     pub async fn new(db_pool: Pool<Sqlite>) -> Result<Self> {
         let (tx, mut rx) = mpsc::channel::<SupervisorMessage>(100);
 
@@ -77,7 +79,7 @@ impl Supervisor {
             }
 
             // Start health check timer
-            let health_check_interval = time::interval(Duration::from_secs(30));
+            let health_check_interval = time::interval(Duration::from_secs(10));
             tokio::pin!(health_check_interval);
 
             // Process messages
@@ -515,7 +517,7 @@ impl Supervisor {
                 path,
                 expected_status,
             } => {
-                let url = format!("http://localhost:{}{}", app.port, path);
+                let url = format!("http://0.0.0.0:{}{}", app.port, path);
 
                 // Create a client with timeout
                 let client = reqwest::ClientBuilder::new()
@@ -544,7 +546,7 @@ impl Supervisor {
             }
             HealthCheckType::TcpPort => {
                 // Try to connect to the app's port
-                match tokio::net::TcpStream::connect(format!("localhost:{}", app.port)).await {
+                match tokio::net::TcpStream::connect(format!("0.0.0.0:{}", app.port)).await {
                     Ok(_) => {
                         info!("Health check passed for app '{}'", app_name);
                         return Ok(());
