@@ -201,7 +201,7 @@ async fn handle_api_request(
             if path.starts_with("/____bindrop_api/apps/") && path.ends_with("/start") =>
         {
             let app_name = path
-                .trim_start_matches("/api/apps/")
+                .trim_start_matches("/____bindrop_api/apps/")
                 .trim_end_matches("/start")
                 .to_string();
             match start::execute(&app_name).await {
@@ -211,16 +211,16 @@ async fn handle_api_request(
                 ))?),
                 Err(e) => {
                     error!("Failed to start app: {}", e);
-                    Some(serde_json::to_string(&format!(
-                        "Failed to start app: {}",
-                        e
-                    ))?)
+                    return Ok(Response::builder()
+                        .status(400)
+                        .body(Body::from("Failed to start app"))
+                        .unwrap());
                 }
             }
         }
         ("POST", path) if path.starts_with("/____bindrop_api/apps/") && path.ends_with("/stop") => {
             let app_name = path
-                .trim_start_matches("/api/apps/")
+                .trim_start_matches("/____bindrop_api/apps/")
                 .trim_end_matches("/stop")
                 .to_string();
             match stop::execute(&app_name).await {
@@ -230,10 +230,10 @@ async fn handle_api_request(
                 ))?),
                 Err(e) => {
                     error!("Failed to stop app: {}", e);
-                    Some(serde_json::to_string(&format!(
-                        "Failed to stop app: {}",
-                        e
-                    ))?)
+                    return Ok(Response::builder()
+                        .status(400)
+                        .body(Body::from("Failed to stop app"))
+                        .unwrap());
                 }
             }
         }
