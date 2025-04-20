@@ -57,6 +57,12 @@ enum Commands {
         app_name: String,
     },
 
+    /// Restart an app
+    Restart {
+        /// Name of the app
+        app_name: String,
+    },
+
     /// Show app status
     Status {
         /// Name of the app (optional, shows all apps if not specified)
@@ -84,7 +90,7 @@ enum Commands {
         host: String,
 
         /// Port to listen on
-        #[arg(short, long, default_value = "8080")]
+        #[arg(short, long, default_value = "80")]
         port: u16,
     },
 }
@@ -108,7 +114,7 @@ pub async fn run() -> Result<()> {
             // Post to an endpoint
             let client = reqwest::Client::new();
             let url = format!(
-                "http://localhost:8080/____bindrop_api/apps/{}/start",
+                "http://localhost:80/____bindrop_api/apps/{}/start",
                 app_name
             );
             let response = client
@@ -123,13 +129,29 @@ pub async fn run() -> Result<()> {
             }
             Ok(())
         }
-        Commands::Stop { app_name } => {
+        Commands::Restart { app_name } => {
             // Post to an endpoint
             let client = reqwest::Client::new();
             let url = format!(
-                "http://localhost:8080/____bindrop_api/apps/{}/stop",
+                "http://localhost:80/____bindrop_api/apps/{}/restart",
                 app_name
             );
+            let response = client
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .send()
+                .await?;
+            if response.status().is_success() {
+                println!("App {} restarted successfully", app_name);
+            } else {
+                println!("Failed to start app {}: {}", app_name, response.status());
+            }
+            Ok(())
+        }
+        Commands::Stop { app_name } => {
+            // Post to an endpoint
+            let client = reqwest::Client::new();
+            let url = format!("http://localhost:80/____bindrop_api/apps/{}/stop", app_name);
             let response = client
                 .post(&url)
                 .header("Content-Type", "application/json")

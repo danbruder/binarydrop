@@ -239,6 +239,30 @@ async fn handle_api_request(
                 }
             }
         }
+        ("POST", path)
+            if path.starts_with("/____bindrop_api/apps/") && path.ends_with("/restart") =>
+        {
+            let app_name = path
+                .trim_start_matches("/____bindrop_api/apps/")
+                .trim_end_matches("/restart")
+                .to_string();
+            let start_result = start::execute(&app_name).await;
+            let stop_result = stop::execute(&app_name).await;
+
+            match (start_result, stop_result) {
+                (Ok(_), Ok(_)) => Some(serde_json::to_string(&format!(
+                    "App '{}' restarted",
+                    app_name
+                ))?),
+                _ => {
+                    error!("Failed to restart app");
+                    return Ok(Response::builder()
+                        .status(400)
+                        .body(Body::from("Failed to restart app"))
+                        .unwrap());
+                }
+            }
+        }
         _ => None,
     };
 

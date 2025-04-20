@@ -33,7 +33,7 @@ impl Default for Config {
                 host: "0.0.0.0".to_string(),
                 port: 3000,
                 proxy_host: "0.0.0.0".to_string(),
-                proxy_port: 8080,
+                proxy_port: 80,
             },
             apps: AppsConfig {
                 data_dir: get_data_dir().unwrap_or_else(|_| PathBuf::from("./data")),
