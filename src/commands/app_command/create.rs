@@ -7,22 +7,19 @@ use crate::models::App;
 
 /// Create a new app
 #[instrument]
-pub async fn execute(app_name: &str) -> Result<()> {
+pub async fn execute(app_name: &str, pool: &sqlx::Pool<sqlx::Sqlite>) -> Result<()> {
     // Validate app name
     if !is_valid_app_name(app_name) {
         return Err(anyhow!("Invalid app name. App names must be lowercase alphanumeric with optional hyphens or underscores."));
     }
 
-    // Connect to database
-    let pool = db::init_pool().await?;
-
     // Check if app already exists
-    if let Some(_) = db::apps::get_by_name(&pool, app_name).await? {
+    if let Some(_) = db::apps::get_by_name(pool, app_name).await? {
         return Err(anyhow!("App '{}' already exists", app_name));
     }
 
     // Get next available port
-    let port = config::get_next_available_port(&pool).await?;
+    let port = config::get_next_available_port(pool).await?;
 
     // Create app
     let app = App::new(app_name, port);
@@ -35,7 +32,7 @@ pub async fn execute(app_name: &str) -> Result<()> {
     ))?;
 
     // Save app to database
-    db::apps::save(&pool, &app).await?;
+    db::apps::save(pool, &app).await?;
 
     info!("Created app '{}' on port {}", app_name, port);
     println!("Successfully created app '{}'", app_name);

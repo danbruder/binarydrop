@@ -6,5 +6,6 @@ pub mod db;
 pub mod errors;
 pub mod models;
 pub mod supervisor;
+pub mod api_client;
 // pub mod proxy;
 // pub mod utils;

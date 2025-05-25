@@ -5,6 +5,7 @@ use crate::commands::{
     app_command::{app_env, create, delete, deploy, logs, status},
     server_command::serve,
 };
+use crate::api_client::ApiClient;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -101,13 +102,20 @@ enum Commands {
     },
 }
 
+fn get_api_base_url() -> String {
+    std::env::var("BINDROP_API_URL").unwrap_or_else(|_| "http://localhost:3000".to_string())
+}
+
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
 
     // Need to send each of these to the admin api and handle each as an api
 
     match cli.command {
-        Commands::Create { app_name } => create::execute(&app_name).await,
+        Commands::Create { app_name } => {
+            let api_client = ApiClient::new(get_api_base_url());
+            api_client.create_app(&app_name).await
+        },
         Commands::Delete { app_name } => delete::execute(&app_name).await,
         Commands::Deploy {
             app_name,
