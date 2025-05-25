@@ -250,7 +250,7 @@ async fn get_logs(
     }
 }
 
-#[instrument(skip(_state))]
+#[instrument(skip(_state, multipart))]
 async fn deploy_app(
     State(_state): State<Arc<RwLock<ProxyState>>>,
     Path(app_name): Path<String>,
