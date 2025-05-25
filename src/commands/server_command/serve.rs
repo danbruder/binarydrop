@@ -121,7 +121,7 @@ async fn handle_request(
         let (parts, body) = response.into_parts();
         let body_bytes = to_bytes(body).await.unwrap_or_default();
         Ok(Response::from_parts(parts, Body::from(body_bytes)))
-    } else if req.uri().path().starts_with("/admin") {
+    } else if host.starts_with("admin.") {
         // Regular admin interface
         Ok(admin_interface(state).await)
     } else {
