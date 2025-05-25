@@ -124,8 +124,18 @@ pub async fn run() -> Result<()> {
             lines,
             follow,
         } => {
-            let logs = api_client.get_logs(&app_name, lines, follow).await?;
-            println!("{}", logs);
+            match api_client.get_logs(&app_name, lines, follow).await? {
+                crate::api_client::LogStream::Full(logs) => println!("{}", logs),
+                crate::api_client::LogStream::Lines(mut stream) => {
+                    use futures_util::StreamExt;
+                    while let Some(line) = stream.next().await {
+                        match line {
+                            Ok(l) => print!("{}", l),
+                            Err(e) => eprintln!("Error: {}", e),
+                        }
+                    }
+                }
+            }
             Ok(())
         },
         Commands::Serve { host, port } => {

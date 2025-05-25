@@ -1,5 +1,14 @@
 use reqwest::Client;
 use anyhow::{anyhow, Result};
+use futures_util::stream::BoxStream;
+use futures_util::StreamExt;
+use reqwest::Response;
+use bytes::Bytes;
+
+pub enum LogStream {
+    Lines(BoxStream<'static, anyhow::Result<String>>),
+    Full(String),
+}
 
 pub struct ApiClient {
     base_url: String,
@@ -143,11 +152,23 @@ impl ApiClient {
         }
     }
 
-    pub async fn get_logs(&self, app_name: &str, lines: usize, follow: bool) -> Result<String> {
+    pub async fn get_logs(&self, app_name: &str, lines: usize, follow: bool) -> Result<LogStream> {
         let url = format!("{}/api/apps/{}/logs?lines={}&follow={}", self.base_url, app_name, lines, follow);
-        let response = reqwest::get(&url).await?;
+        let response = self.client.get(&url).send().await?;
         if response.status().is_success() {
-            Ok(response.text().await?)
+            if follow {
+                let stream = response
+                    .bytes_stream()
+                    .map(|chunk: Result<Bytes, reqwest::Error>| {
+                        chunk
+                            .map_err(|e| anyhow::anyhow!(e))
+                            .map(|bytes| String::from_utf8_lossy(&bytes).to_string())
+                    })
+                    .boxed();
+                Ok(LogStream::Lines(stream))
+            } else {
+                Ok(LogStream::Full(response.text().await?))
+            }
         } else {
             Err(anyhow::anyhow!("Failed to fetch logs: {}", response.status()))
         }
