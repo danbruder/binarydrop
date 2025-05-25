@@ -139,8 +139,10 @@ pub fn get_app_log_path(app_name: &str) -> Result<PathBuf> {
 }
 
 impl ServerConfig {
+    #[tracing::instrument]
     pub fn load() -> Result<Self> {
         let config_path = Self::get_config_path()?;
+        tracing::info!("Loading server config from {}", config_path.display());
 
         if !config_path.exists() {
             let config = Self::default();
@@ -153,9 +155,11 @@ impl ServerConfig {
         Ok(config)
     }
 
+    #[tracing::instrument]
     pub fn save(&self) -> Result<()> {
         let config_path = Self::get_config_path()?;
         let contents = toml::to_string_pretty(self)?;
+        tracing::info!("Saving server config to {}", config_path.display());
         fs::write(config_path, contents)?;
         Ok(())
     }
@@ -171,8 +175,10 @@ impl ServerConfig {
 }
 
 impl ClientConfig {
+    #[tracing::instrument]
     pub fn load() -> Result<Self> {
         let config_path = Self::get_config_path()?;
+        tracing::info!("Loading client config from {}", config_path.display());
 
         if !config_path.exists() {
             let config = Self::default();
@@ -185,9 +191,11 @@ impl ClientConfig {
         Ok(config)
     }
 
+    #[tracing::instrument]
     pub fn save(&self) -> Result<()> {
         let config_path = Self::get_config_path()?;
         let contents = toml::to_string_pretty(self)?;
+        tracing::info!("Saving client config to {}", config_path.display());
         fs::write(config_path, contents)?;
         Ok(())
     }

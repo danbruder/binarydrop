@@ -92,6 +92,7 @@ enum Commands {
     Serve,
 }
 
+#[tracing::instrument]
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
     let config = ClientConfig::load()?;
