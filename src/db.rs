@@ -279,6 +279,26 @@ pub mod apps {
         Ok(apps)
     }
 
+    // Delete
+    #[instrument(skip(pool))]
+    pub async fn delete_by_app_id(pool: &Pool<Sqlite>, id: &str) -> Result<()> {
+        let _ = sqlx::query!(
+            r#"
+            DELETE FROM process_history
+            WHERE app_id = ?;
+
+            DELETE FROM apps
+            WHERE id = ?;
+            "#,
+            id,
+            id
+        )
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
     /// Get all apps
     #[instrument(skip(pool))]
     pub async fn get_all(pool: &Pool<Sqlite>) -> Result<Vec<App>> {

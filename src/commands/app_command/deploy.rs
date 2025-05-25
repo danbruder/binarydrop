@@ -18,6 +18,16 @@ pub async fn execute(app_name: &str, binary_path: &str) -> Result<()> {
         return Err(anyhow!("Binary file not found: {}", binary_path.display()));
     }
 
+    let data_dir = config::get_app_data_dir(app_name)?;
+    // Create data directory if it doesn't exist
+    if !data_dir.exists() {
+        fs::create_dir_all(&data_dir).context(format!(
+            "Failed to create data directory: {}",
+            data_dir.display()
+        ))?;
+    }
+    info!("Created data directory: {}", data_dir.display());
+
     // Check if binary is executable
     #[cfg(unix)]
     {

@@ -212,6 +212,7 @@ impl Supervisor {
             .append(true)
             .open(&log_path)
             .context(format!("Failed to open log file: {}", log_path.display()))?;
+        let data_dir = config::get_app_data_dir(&app.name)?;
 
         // Start process
         let mut cmd = Command::new(binary_path);
@@ -219,6 +220,7 @@ impl Supervisor {
         // Add environment variables
         cmd.env("PORT", app.port.to_string());
         cmd.env("APP_NAME", &app.name);
+        cmd.env("DATA_DIR", &data_dir);
         for (key, value) in &app.environment {
             cmd.env(key, value);
         }
@@ -283,9 +285,9 @@ impl Supervisor {
             .ok_or_else(|| anyhow!("App '{}' not found", app_name))?;
 
         // Check if app is running
-        if app.state != AppState::Running {
-            return Err(anyhow!("App '{}' is not running", app_name));
-        }
+        // if app.state != AppState::Running {
+        //     return Err(anyhow!("App '{}' is not running", app_name));
+        // }
 
         // Get child process
         let child_opt = {

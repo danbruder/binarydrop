@@ -175,6 +175,11 @@ pub fn get_app_binary_path(app_name: &str) -> Result<PathBuf> {
     Ok(get_app_dir(app_name)?.join("app"))
 }
 
+/// Get the app binary path
+pub fn get_app_data_dir(app_name: &str) -> Result<PathBuf> {
+    Ok(get_app_dir(app_name)?.join("data"))
+}
+
 /// Get the app log file path
 pub fn get_app_log_path(app_name: &str) -> Result<PathBuf> {
     let logs_dir = get_logs_dir()?;

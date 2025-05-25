@@ -73,6 +73,10 @@ impl App {
             false
         }
     }
+
+    pub fn is_running(&self) -> bool {
+        matches!(self.state, AppState::Running | AppState::Starting)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

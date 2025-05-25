@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::commands::{
-    app_command::{app_env, create, deploy, logs, start, status, stop},
+    app_command::{app_env, create, delete, deploy, logs, start, status, stop},
     server_command::serve,
 };
 
@@ -17,6 +17,12 @@ pub struct Cli {
 enum Commands {
     /// Create a new app
     Create {
+        /// Name of the app
+        app_name: String,
+    },
+
+    /// Delete an app
+    Delete {
         /// Name of the app
         app_name: String,
     },
@@ -100,6 +106,7 @@ pub async fn run() -> Result<()> {
 
     match cli.command {
         Commands::Create { app_name } => create::execute(&app_name).await,
+        Commands::Delete { app_name } => delete::execute(&app_name).await,
         Commands::Deploy {
             app_name,
             binary_path,
