@@ -28,3 +28,4 @@ The proxy needs to know about the supervisor so it can check app state on reques
 
 The admin API needs to know about the supervisor so it can send updates when the user interacts with the api. I do not want to add to the current API interface.
  
+Also want to make the API authenticated - and a flow to do that. i.e. generate a secret with a new command line, store it in the database, then load it at run time. But that can come later. 

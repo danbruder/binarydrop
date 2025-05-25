@@ -108,85 +108,31 @@ fn get_api_base_url() -> String {
 
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
-
-    // Need to send each of these to the admin api and handle each as an api
+    let api_client = ApiClient::new(get_api_base_url());
 
     match cli.command {
-        Commands::Create { app_name } => {
-            let api_client = ApiClient::new(get_api_base_url());
-            api_client.create_app(&app_name).await
-        },
-        Commands::Delete { app_name } => delete::execute(&app_name).await,
-        Commands::Deploy {
-            app_name,
-            binary_path,
-        } => deploy::execute(&app_name, &binary_path).await,
-        Commands::Env {
-            app_name,
-            key,
-            value,
-            delete,
-        } => app_env::set_env(&app_name, &key, &value, delete).await,
-        Commands::Start { app_name } => {
-            // Post to an endpoint
-            let client = reqwest::Client::new();
-            let url = format!(
-                "http://localhost:80/____bindrop_api/apps/{}/start",
-                app_name
-            );
-            let response = client
-                .post(&url)
-                .header("Content-Type", "application/json")
-                .send()
-                .await?;
-            if response.status().is_success() {
-                println!("App {} started successfully", app_name);
-            } else {
-                println!("Failed to start app {}: {}", app_name, response.status());
-            }
-            Ok(())
-        }
-        Commands::Restart { app_name } => {
-            // Post to an endpoint
-            let client = reqwest::Client::new();
-            let url = format!(
-                "http://localhost:80/____bindrop_api/apps/{}/restart",
-                app_name
-            );
-            let response = client
-                .post(&url)
-                .header("Content-Type", "application/json")
-                .send()
-                .await?;
-            if response.status().is_success() {
-                println!("App {} restarted successfully", app_name);
-            } else {
-                println!("Failed to start app {}: {}", app_name, response.status());
-            }
-            Ok(())
-        }
-        Commands::Stop { app_name } => {
-            // Post to an endpoint
-            let client = reqwest::Client::new();
-            let url = format!("http://localhost:80/____bindrop_api/apps/{}/stop", app_name);
-            let response = client
-                .post(&url)
-                .header("Content-Type", "application/json")
-                .send()
-                .await?;
-            if response.status().is_success() {
-                println!("App {} stopped successfully", app_name);
-            } else {
-                println!("Failed to stopped app {}: {}", app_name, response.status());
-            }
-            Ok(())
-        }
-        Commands::Status { app_name } => status::execute(app_name.as_deref()).await,
+        Commands::Create { app_name } => api_client.create_app(&app_name).await,
+        Commands::Start { app_name } => api_client.start_app(&app_name).await,
+        Commands::Stop { app_name } => api_client.stop_app(&app_name).await,
+        Commands::Restart { app_name } => api_client.restart_app(&app_name).await,
+        Commands::Delete { app_name } => api_client.delete_app(&app_name).await,
+        Commands::Deploy { app_name, binary_path } => api_client.deploy_app(&app_name, &binary_path).await,
+        Commands::Env { app_name, key, value, delete } => api_client.set_env(&app_name, &key, &value, delete).await,
+        Commands::Status { app_name } => api_client.get_status(app_name.as_deref()).await,
         Commands::Logs {
             app_name,
             lines,
             follow,
-        } => logs::execute(&app_name, lines, follow).await,
-        Commands::Serve { host, port } => serve::execute(&host, port).await,
+        } => {
+            let logs = api_client.get_logs(&app_name, lines, follow).await?;
+            println!("{}", logs);
+            Ok(())
+        },
+        Commands::Serve { host, port } => {
+            if std::env::var("BINDROP_SERVER_MODE").is_err() {
+                return Err(anyhow::anyhow!("The serve command can only be run in server mode."));
+            }
+            serve::execute(&host, port).await
+        },
     }
 }

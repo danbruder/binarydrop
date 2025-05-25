@@ -3,13 +3,16 @@ use crate::commands::app_command::{start, stop};
 use crate::commands::server_command::serve::ProxyState;
 use crate::db;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, State, Query},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use std::collections::HashMap;
+use crate::commands::app_command::logs;
+use axum::http::StatusCode;
 
 pub fn create_api_router(state: Arc<RwLock<ProxyState>>) -> Router {
     Router::new()
@@ -19,6 +22,7 @@ pub fn create_api_router(state: Arc<RwLock<ProxyState>>) -> Router {
         .route("/apps/:name/start", post(start_app))
         .route("/apps/:name/stop", post(stop_app))
         .route("/apps/:name/restart", post(restart_app))
+        .route("/api/apps/:app_name/logs", get(get_logs))
         .with_state(state)
 }
 
@@ -138,6 +142,20 @@ async fn restart_app(
             format!("Failed to start app: {}", e),
         )
             .into_response(),
+    }
+}
+
+async fn get_logs(
+    Path(app_name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+    State(state): State<Arc<RwLock<ProxyState>>>,
+) -> impl IntoResponse {
+    let lines = params.get("lines").and_then(|l| l.parse::<usize>().ok()).unwrap_or(50);
+    let follow = params.get("follow").and_then(|f| f.parse::<bool>().ok()).unwrap_or(false);
+
+    match logs::execute(&app_name, lines, follow).await {
+        Ok(logs) => (StatusCode::OK, logs).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 
