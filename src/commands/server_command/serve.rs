@@ -115,6 +115,7 @@ async fn handle_request(
         .get("host")
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
+
     if host.starts_with("admin-api.") {
         let api_router = api::create_api_router(Arc::clone(&state));
         let response = api_router.oneshot(req).await.unwrap();
@@ -125,9 +126,17 @@ async fn handle_request(
         // Regular admin interface
         Ok(admin_interface(state).await)
     } else {
-        // Regular proxy to app
-        let path = req.uri().path().to_string();
-        match proxy_to_app(state, &path, req).await {
+        // Extract app name from host
+        let app_name = host.split('.').next().unwrap_or("");
+        if app_name.is_empty() {
+            return Ok(Response::builder()
+                .status(404)
+                .body(Body::from("No app specified in host header"))
+                .unwrap());
+        }
+
+        // Proxy to app
+        match proxy_to_app(state, app_name, req).await {
             Ok(response) => Ok(response),
             Err(e) => {
                 error!("Proxy error: {}", e);
@@ -237,18 +246,9 @@ async fn admin_interface(state: Arc<RwLock<ProxyState>>) -> Response<Body> {
 /// Proxy request to app
 async fn proxy_to_app(
     state: Arc<RwLock<ProxyState>>,
-    path: &str,
+    app_name: &str,
     req: Request<Body>,
 ) -> anyhow::Result<Response<Body>> {
-    // Extract app name from path
-    let app_name = path.trim_start_matches('/').split('/').next().unwrap_or("");
-    if app_name.is_empty() {
-        return Ok(Response::builder()
-            .status(404)
-            .body(Body::from("No app specified"))
-            .unwrap());
-    }
-
     let pool = state.read().await.db_pool.clone();
     let app = db::apps::get_by_name(&pool, app_name)
         .await?
