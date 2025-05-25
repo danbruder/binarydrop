@@ -2,7 +2,6 @@ use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::PathBuf;
 use tracing::{info, instrument};
 
 use crate::config;
@@ -10,14 +9,8 @@ use crate::db;
 use crate::models::AppState;
 
 /// Deploy a binary to an app
-#[instrument(skip(binary_path))]
-pub async fn execute(app_name: &str, binary_path: &str) -> Result<()> {
-    // Check if binary exists
-    let binary_path = PathBuf::from(binary_path);
-    if !binary_path.exists() {
-        return Err(anyhow!("Binary file not found: {}", binary_path.display()));
-    }
-
+#[instrument(skip(binary_data))]
+pub async fn execute(app_name: &str, binary_data: &[u8]) -> Result<()> {
     let data_dir = config::get_app_data_dir(app_name)?;
     // Create data directory if it doesn't exist
     if !data_dir.exists() {
@@ -28,20 +21,6 @@ pub async fn execute(app_name: &str, binary_path: &str) -> Result<()> {
     }
     info!("Created data directory: {}", data_dir.display());
 
-    // Check if binary is executable
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let metadata = fs::metadata(&binary_path)?;
-        let permissions = metadata.permissions();
-        if permissions.mode() & 0o111 == 0 {
-            return Err(anyhow!(
-                "Binary file is not executable: {}",
-                binary_path.display()
-            ));
-        }
-    }
-
     // Connect to database
     let pool = db::init_pool().await?;
 
@@ -51,12 +30,8 @@ pub async fn execute(app_name: &str, binary_path: &str) -> Result<()> {
         .ok_or_else(|| anyhow!("App '{}' not found", app_name))?;
 
     // Calculate binary hash
-    let binary_data = fs::read(&binary_path).context(format!(
-        "Failed to read binary file: {}",
-        binary_path.display()
-    ))?;
     let mut hasher = Sha256::new();
-    hasher.update(&binary_data);
+    hasher.update(binary_data);
     let hash = hex::encode(hasher.finalize());
 
     // Check if binary is the same
@@ -67,10 +42,10 @@ pub async fn execute(app_name: &str, binary_path: &str) -> Result<()> {
         }
     }
 
-    // Copy binary to app directory
+    // Save binary to app directory
     let target_path = config::get_app_binary_path(app_name)?;
-    fs::copy(&binary_path, &target_path).context(format!(
-        "Failed to copy binary to app directory: {}",
+    fs::write(&target_path, binary_data).context(format!(
+        "Failed to write binary to app directory: {}",
         target_path.display()
     ))?;
 

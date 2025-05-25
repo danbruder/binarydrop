@@ -99,9 +99,16 @@ impl ApiClient {
     }
 
     pub async fn deploy_app(&self, app_name: &str, binary_path: &str) -> Result<()> {
+        // Read the binary file
+        let binary_data = tokio::fs::read(binary_path).await?;
+
+        // Create multipart form
+        let form = reqwest::multipart::Form::new()
+            .part("binary", reqwest::multipart::Part::bytes(binary_data));
+
         let response = self.client
-            .post(&format!("{}/apps/{}/deploy", self.base_url, app_name))
-            .json(&serde_json::json!({ "binary_path": binary_path }))
+            .post(&format!("{}/api/apps/{}/deploy", self.base_url, app_name))
+            .multipart(form)
             .send()
             .await?;
 

@@ -3,7 +3,7 @@ use crate::commands::app_command::{start, stop};
 use crate::commands::server_command::serve::ProxyState;
 use crate::db;
 use axum::{
-    extract::{Path, State, Query},
+    extract::{Path, State, Query, Multipart},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -17,6 +17,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader, AsyncSeekExt, SeekFrom};
 use std::time::Duration;
 use futures_util::stream::unfold;
+use crate::commands::app_command::deploy;
 
 pub fn create_api_router(state: Arc<RwLock<ProxyState>>) -> Router {
     Router::new()
@@ -27,6 +28,7 @@ pub fn create_api_router(state: Arc<RwLock<ProxyState>>) -> Router {
         .route("/apps/:name/stop", post(stop_app))
         .route("/apps/:name/restart", post(restart_app))
         .route("/api/apps/:app_name/logs", get(get_logs))
+        .route("/apps/:name/deploy", post(deploy_app))
         .with_state(state)
 }
 
@@ -210,6 +212,34 @@ async fn get_logs(
             }
             Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read log file: {}", e)).into_response(),
         }
+    }
+}
+
+async fn deploy_app(
+    State(state): State<Arc<RwLock<ProxyState>>>,
+    Path(app_name): Path<String>,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
+    // Get the binary file from the multipart form
+    let mut binary_data = None;
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        if field.name() == Some("binary") {
+            binary_data = Some(field.bytes().await.unwrap());
+            break;
+        }
+    }
+
+    let binary_data = match binary_data {
+        Some(data) => data,
+        None => {
+            return (StatusCode::BAD_REQUEST, "No binary file provided").into_response();
+        }
+    };
+
+    // Pass the binary data to the deploy command
+    match deploy::execute(&app_name, &binary_data).await {
+        Ok(_) => (StatusCode::OK, format!("App '{}' deployed successfully", app_name)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to deploy app: {}", e)).into_response(),
     }
 }
 
