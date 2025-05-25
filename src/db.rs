@@ -279,7 +279,7 @@ pub mod apps {
         Ok(apps)
     }
 
-    // Delete
+    /// Delete an app by ID
     #[instrument(skip(pool))]
     pub async fn delete_by_app_id(pool: &Pool<Sqlite>, id: &str) -> Result<()> {
         let _ = sqlx::query!(
@@ -298,6 +298,7 @@ pub mod apps {
 
         Ok(())
     }
+    
 
     /// Get all apps
     #[instrument(skip(pool))]

@@ -1,6 +1,7 @@
 use crate::commands::app_command::create;
 use crate::commands::app_command::deploy;
 use crate::commands::app_command::{start, stop};
+use crate::commands::app_command::delete;
 use crate::commands::server_command::serve::ProxyState;
 use crate::db;
 use axum::extract::DefaultBodyLimit;
@@ -9,7 +10,7 @@ use axum::response::sse::{Event, Sse};
 use axum::{
     extract::{Multipart, Path, Query, State},
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use bytes::Bytes;
@@ -27,10 +28,11 @@ pub fn create_api_router(state: Arc<RwLock<ProxyState>>) -> Router {
         .route("/apps", get(list_apps))
         .route("/apps", post(create_app))
         .route("/apps/:name", get(get_app))
+        .route("/apps/:name", delete(delete_app))
         .route("/apps/:name/start", post(start_app))
         .route("/apps/:name/stop", post(stop_app))
         .route("/apps/:name/restart", post(restart_app))
-        .route("/apps/:app_name/logs", get(get_logs))
+        .route("/apps/:name/logs", get(get_logs))
         .route("/apps/:name/deploy", post(deploy_app))
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024)) // 100MB limit
         .with_state(state)
@@ -160,9 +162,9 @@ async fn restart_app(
     }
 }
 
-#[instrument(skip(app_name, _state))]
+#[instrument(skip(name, _state))]
 async fn get_logs(
-    Path(app_name): Path<String>,
+    Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
     State(_state): State<Arc<RwLock<ProxyState>>>,
 ) -> impl IntoResponse {
@@ -175,7 +177,7 @@ async fn get_logs(
         .and_then(|f| f.parse::<bool>().ok())
         .unwrap_or(false);
 
-    let log_path = match crate::config::get_app_log_path(&app_name) {
+    let log_path = match crate::config::get_app_log_path(&name) {
         Ok(path) => path,
         Err(e) => {
             return (StatusCode::NOT_FOUND, format!("Log file not found: {}", e)).into_response();
@@ -185,7 +187,7 @@ async fn get_logs(
     if !log_path.exists() {
         return (
             StatusCode::NOT_FOUND,
-            format!("Log file not found for app '{}'", app_name),
+            format!("Log file not found for app '{}'", name),
         )
             .into_response();
     }
@@ -253,7 +255,7 @@ async fn get_logs(
 #[instrument(skip(_state, multipart))]
 async fn deploy_app(
     State(_state): State<Arc<RwLock<ProxyState>>>,
-    Path(app_name): Path<String>,
+    Path(name): Path<String>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
     // Get the binary file from the multipart form
@@ -291,15 +293,34 @@ async fn deploy_app(
     tracing::info!("Passing binary data to deploy command");
 
     // Pass the binary data to the deploy command
-    match deploy::execute(&app_name, &binary_data).await {
+    match deploy::execute(&name, &binary_data).await {
         Ok(_) => (
             StatusCode::OK,
-            format!("App '{}' deployed successfully", app_name),
+            format!("App '{}' deployed successfully", name),
         )
             .into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to deploy app: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+#[instrument(skip(_state))]
+async fn delete_app(
+    State(_state): State<Arc<RwLock<ProxyState>>>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    match delete::execute(&name).await {
+        Ok(_) => (
+            axum::http::StatusCode::OK,
+            format!("App '{}' deleted", name),
+        )
+            .into_response(),
+        Err(e) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to delete app: {}", e),
         )
             .into_response(),
     }
