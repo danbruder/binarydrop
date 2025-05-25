@@ -11,6 +11,7 @@ use crate::models::AppState;
 /// Deploy a binary to an app
 #[instrument(skip(binary_data))]
 pub async fn execute(app_name: &str, binary_data: &[u8]) -> Result<()> {
+    info!("Deploying binary to app '{}'", app_name);
     let data_dir = config::get_app_data_dir(app_name)?;
     // Create data directory if it doesn't exist
     if !data_dir.exists() {

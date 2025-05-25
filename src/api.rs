@@ -3,6 +3,7 @@ use crate::commands::app_command::deploy;
 use crate::commands::app_command::{start, stop};
 use crate::commands::server_command::serve::ProxyState;
 use crate::db;
+use axum::extract::DefaultBodyLimit;
 use axum::http::StatusCode;
 use axum::response::sse::{Event, Sse};
 use axum::{
@@ -11,6 +12,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use bytes::Bytes;
 use futures_util::stream::unfold;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -30,6 +32,7 @@ pub fn create_api_router(state: Arc<RwLock<ProxyState>>) -> Router {
         .route("/apps/:name/restart", post(restart_app))
         .route("/apps/:app_name/logs", get(get_logs))
         .route("/apps/:name/deploy", post(deploy_app))
+        .layer(DefaultBodyLimit::max(100 * 1024 * 1024)) // 100MB limit
         .with_state(state)
 }
 
@@ -254,11 +257,27 @@ async fn deploy_app(
     mut multipart: Multipart,
 ) -> impl IntoResponse {
     // Get the binary file from the multipart form
-    let mut binary_data = None;
-    while let Some(field) = multipart.next_field().await.unwrap() {
+    let mut binary_data: Option<Bytes> = None;
+
+    // Process all fields in the multipart form
+    while let Ok(Some(field)) = multipart.next_field().await {
+        tracing::info!("Processing field: {:?}", field.name());
         if field.name() == Some("binary") {
-            binary_data = Some(field.bytes().await.unwrap());
-            break;
+            match field.bytes().await {
+                Ok(bytes) => {
+                    tracing::info!("Successfully read binary data");
+                    binary_data = Some(bytes);
+                    break;
+                }
+                Err(e) => {
+                    tracing::error!("Error reading binary field: {}", e);
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Error reading binary file",
+                    )
+                        .into_response();
+                }
+            }
         }
     }
 
@@ -268,6 +287,8 @@ async fn deploy_app(
             return (StatusCode::BAD_REQUEST, "No binary file provided").into_response();
         }
     };
+
+    tracing::info!("Passing binary data to deploy command");
 
     // Pass the binary data to the deploy command
     match deploy::execute(&app_name, &binary_data).await {
