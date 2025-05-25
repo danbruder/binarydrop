@@ -9,3 +9,6 @@ pub mod supervisor;
 pub mod api_client;
 // pub mod proxy;
 // pub mod utils;
+
+#[cfg(test)]
+mod tests;

@@ -39,6 +39,10 @@ futures-util = "0.3"
 tokio-stream = { version = "0.1", features = ["io-util"] }
 bytes = "1"
 
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.9"
+
 [[bin]]
 name = "bindrop"
 path = "src/main.rs"

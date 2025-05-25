@@ -3,6 +3,10 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::OnceLock;
+
+static TEST_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+static TEST_CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -45,8 +49,18 @@ impl Default for Config {
     }
 }
 
+/// Set test directories
+pub fn set_test_dirs(data_dir: PathBuf, config_dir: PathBuf) {
+    TEST_DATA_DIR.set(data_dir).unwrap();
+    TEST_CONFIG_DIR.set(config_dir).unwrap();
+}
+
 /// Get the config directory
 pub fn get_config_dir() -> Result<PathBuf> {
+    if let Some(dir) = TEST_CONFIG_DIR.get() {
+        return Ok(dir.clone());
+    }
+
     let config_dir = dirs::config_dir()
         .context("Could not determine config directory")?
         .join("binarydrop");
@@ -60,6 +74,10 @@ pub fn get_config_dir() -> Result<PathBuf> {
 
 /// Get the data directory
 pub fn get_data_dir() -> Result<PathBuf> {
+    if let Some(dir) = TEST_DATA_DIR.get() {
+        return Ok(dir.clone());
+    }
+
     let data_dir = dirs::data_dir()
         .context("Could not determine data directory")?
         .join("binarydrop");

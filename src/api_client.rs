@@ -1,12 +1,25 @@
-use reqwest::Client;
 use anyhow::{anyhow, Result};
+use bytes::Bytes;
 use futures_util::stream::BoxStream;
 use futures_util::StreamExt;
-use bytes::Bytes;
+use reqwest::Client;
+use serde::Deserialize;
 
 pub enum LogStream {
     Lines(BoxStream<'static, anyhow::Result<String>>),
     Full(String),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AppInfo {
+    pub id: String,
+    pub name: String,
+    pub state: String,
+    pub host: Option<String>,
+    pub port: u16,
+    pub process_id: Option<u32>,
+    pub binary_path: Option<String>,
+    pub binary_hash: Option<String>,
 }
 
 pub struct ApiClient {
@@ -23,7 +36,8 @@ impl ApiClient {
     }
 
     pub async fn create_app(&self, app_name: &str) -> Result<()> {
-        let response = self.client
+        let response = self
+            .client
             .post(&format!("{}/apps", self.base_url))
             .json(&serde_json::json!({ "name": app_name }))
             .send()
@@ -39,7 +53,8 @@ impl ApiClient {
     }
 
     pub async fn start_app(&self, app_name: &str) -> Result<()> {
-        let response = self.client
+        let response = self
+            .client
             .post(&format!("{}/apps/{}/start", self.base_url, app_name))
             .send()
             .await?;
@@ -54,7 +69,8 @@ impl ApiClient {
     }
 
     pub async fn stop_app(&self, app_name: &str) -> Result<()> {
-        let response = self.client
+        let response = self
+            .client
             .post(&format!("{}/apps/{}/stop", self.base_url, app_name))
             .send()
             .await?;
@@ -69,7 +85,8 @@ impl ApiClient {
     }
 
     pub async fn restart_app(&self, app_name: &str) -> Result<()> {
-        let response = self.client
+        let response = self
+            .client
             .post(&format!("{}/apps/{}/restart", self.base_url, app_name))
             .send()
             .await?;
@@ -84,7 +101,8 @@ impl ApiClient {
     }
 
     pub async fn delete_app(&self, app_name: &str) -> Result<()> {
-        let response = self.client
+        let response = self
+            .client
             .delete(&format!("{}/apps/{}", self.base_url, app_name))
             .send()
             .await?;
@@ -106,8 +124,9 @@ impl ApiClient {
         let form = reqwest::multipart::Form::new()
             .part("binary", reqwest::multipart::Part::bytes(binary_data));
 
-        let response = self.client
-            .post(&format!("{}/api/apps/{}/deploy", self.base_url, app_name))
+        let response = self
+            .client
+            .post(&format!("{}/apps/{}/deploy", self.base_url, app_name))
             .multipart(form)
             .send()
             .await?;
@@ -121,8 +140,15 @@ impl ApiClient {
         }
     }
 
-    pub async fn set_env(&self, app_name: &str, key: &str, value: &str, delete: bool) -> Result<()> {
-        let response = self.client
+    pub async fn set_env(
+        &self,
+        app_name: &str,
+        key: &str,
+        value: &str,
+        delete: bool,
+    ) -> Result<()> {
+        let response = self
+            .client
             .post(&format!("{}/apps/{}/env", self.base_url, app_name))
             .json(&serde_json::json!({ "key": key, "value": value, "delete": delete }))
             .send()
@@ -143,10 +169,7 @@ impl ApiClient {
             None => format!("{}/apps", self.base_url),
         };
 
-        let response = self.client
-            .get(&url)
-            .send()
-            .await?;
+        let response = self.client.get(&url).send().await?;
 
         if response.status().is_success() {
             let status = response.text().await?;
@@ -159,7 +182,10 @@ impl ApiClient {
     }
 
     pub async fn get_logs(&self, app_name: &str, lines: usize, follow: bool) -> Result<LogStream> {
-        let url = format!("{}/api/apps/{}/logs?lines={}&follow={}", self.base_url, app_name, lines, follow);
+        let url = format!(
+            "{}/apps/{}/logs?lines={}&follow={}",
+            self.base_url, app_name, lines, follow
+        );
         let response = self.client.get(&url).send().await?;
         if response.status().is_success() {
             if follow {
@@ -176,9 +202,24 @@ impl ApiClient {
                 Ok(LogStream::Full(response.text().await?))
             }
         } else {
-            Err(anyhow::anyhow!("Failed to fetch logs: {}", response.status()))
+            Err(anyhow::anyhow!(
+                "Failed to fetch logs: {}",
+                response.status()
+            ))
+        }
+    }
+
+    pub async fn get_app_info(&self, app_name: &str) -> Result<AppInfo> {
+        let url = format!("{}/apps/{}", self.base_url, app_name);
+        let response = self.client.get(&url).send().await?;
+        if response.status().is_success() {
+            let app_info: AppInfo = response.json().await?;
+            Ok(app_info)
+        } else {
+            let error = response.text().await?;
+            Err(anyhow!("Failed to get app info: {}", error))
         }
     }
 
     // Add other methods (start_app, stop_app, etc.) similarly
-} 
+}

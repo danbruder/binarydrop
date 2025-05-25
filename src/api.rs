@@ -1,23 +1,24 @@
 use crate::commands::app_command::create;
+use crate::commands::app_command::deploy;
 use crate::commands::app_command::{start, stop};
 use crate::commands::server_command::serve::ProxyState;
 use crate::db;
+use axum::http::StatusCode;
+use axum::response::sse::{Event, Sse};
 use axum::{
-    extract::{Path, State, Query, Multipart},
+    extract::{Multipart, Path, Query, State},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use std::collections::HashMap;
-use axum::http::StatusCode;
-use axum::response::sse::{Sse, Event};
-use tokio::fs::File;
-use tokio::io::{AsyncBufReadExt, BufReader, AsyncSeekExt, SeekFrom};
-use std::time::Duration;
 use futures_util::stream::unfold;
-use crate::commands::app_command::deploy;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::fs::File;
+use tokio::io::{AsyncBufReadExt, AsyncSeekExt, BufReader, SeekFrom};
+use tokio::sync::RwLock;
+use tracing::instrument;
 
 pub fn create_api_router(state: Arc<RwLock<ProxyState>>) -> Router {
     Router::new()
@@ -27,11 +28,12 @@ pub fn create_api_router(state: Arc<RwLock<ProxyState>>) -> Router {
         .route("/apps/:name/start", post(start_app))
         .route("/apps/:name/stop", post(stop_app))
         .route("/apps/:name/restart", post(restart_app))
-        .route("/api/apps/:app_name/logs", get(get_logs))
+        .route("/apps/:app_name/logs", get(get_logs))
         .route("/apps/:name/deploy", post(deploy_app))
         .with_state(state)
 }
 
+#[instrument(skip(state))]
 async fn list_apps(State(state): State<Arc<RwLock<ProxyState>>>) -> impl IntoResponse {
     let pool = state.read().await.db_pool.clone();
     match db::apps::get_all(&pool).await {
@@ -57,6 +59,7 @@ async fn list_apps(State(state): State<Arc<RwLock<ProxyState>>>) -> impl IntoRes
     }
 }
 
+#[instrument(skip(state))]
 async fn get_app(
     State(state): State<Arc<RwLock<ProxyState>>>,
     Path(name): Path<String>,
@@ -87,6 +90,7 @@ async fn get_app(
     }
 }
 
+#[instrument(skip(_state))]
 async fn start_app(
     State(_state): State<Arc<RwLock<ProxyState>>>,
     Path(name): Path<String>,
@@ -105,6 +109,7 @@ async fn start_app(
     }
 }
 
+#[instrument(skip(_state))]
 async fn stop_app(
     State(_state): State<Arc<RwLock<ProxyState>>>,
     Path(name): Path<String>,
@@ -123,6 +128,7 @@ async fn stop_app(
     }
 }
 
+#[instrument(skip(_state))]
 async fn restart_app(
     State(_state): State<Arc<RwLock<ProxyState>>>,
     Path(name): Path<String>,
@@ -151,13 +157,20 @@ async fn restart_app(
     }
 }
 
+#[instrument(skip(app_name, _state))]
 async fn get_logs(
     Path(app_name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
     State(_state): State<Arc<RwLock<ProxyState>>>,
 ) -> impl IntoResponse {
-    let lines = params.get("lines").and_then(|l| l.parse::<usize>().ok()).unwrap_or(50);
-    let follow = params.get("follow").and_then(|f| f.parse::<bool>().ok()).unwrap_or(false);
+    let lines = params
+        .get("lines")
+        .and_then(|l| l.parse::<usize>().ok())
+        .unwrap_or(50);
+    let follow = params
+        .get("follow")
+        .and_then(|f| f.parse::<bool>().ok())
+        .unwrap_or(false);
 
     let log_path = match crate::config::get_app_log_path(&app_name) {
         Ok(path) => path,
@@ -167,7 +180,11 @@ async fn get_logs(
     };
 
     if !log_path.exists() {
-        return (StatusCode::NOT_FOUND, format!("Log file not found for app '{}'", app_name)).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            format!("Log file not found for app '{}'", app_name),
+        )
+            .into_response();
     }
 
     if follow {
@@ -175,7 +192,11 @@ async fn get_logs(
         let file = match File::open(&log_path).await {
             Ok(f) => f,
             Err(e) => {
-                return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to open log file: {}", e)).into_response();
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to open log file: {}", e),
+                )
+                    .into_response();
             }
         };
         let mut reader = BufReader::new(file);
@@ -193,7 +214,10 @@ async fn get_logs(
                     Ok(_) => {
                         let out = line.clone();
                         line.clear();
-                        return Some((Ok::<_, std::convert::Infallible>(Event::default().data(out)), reader));
+                        return Some((
+                            Ok::<_, std::convert::Infallible>(Event::default().data(out)),
+                            reader,
+                        ));
                     }
                     Err(_) => return None,
                 }
@@ -206,17 +230,26 @@ async fn get_logs(
             Ok(data) => {
                 let content = String::from_utf8_lossy(&data);
                 let lines_vec: Vec<&str> = content.lines().collect();
-                let start = if lines_vec.len() > lines { lines_vec.len() - lines } else { 0 };
+                let start = if lines_vec.len() > lines {
+                    lines_vec.len() - lines
+                } else {
+                    0
+                };
                 let last_lines = lines_vec[start..].join("\n");
                 (StatusCode::OK, last_lines).into_response()
             }
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read log file: {}", e)).into_response(),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to read log file: {}", e),
+            )
+                .into_response(),
         }
     }
 }
 
+#[instrument(skip(_state))]
 async fn deploy_app(
-    State(state): State<Arc<RwLock<ProxyState>>>,
+    State(_state): State<Arc<RwLock<ProxyState>>>,
     Path(app_name): Path<String>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
@@ -238,8 +271,16 @@ async fn deploy_app(
 
     // Pass the binary data to the deploy command
     match deploy::execute(&app_name, &binary_data).await {
-        Ok(_) => (StatusCode::OK, format!("App '{}' deployed successfully", app_name)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to deploy app: {}", e)).into_response(),
+        Ok(_) => (
+            StatusCode::OK,
+            format!("App '{}' deployed successfully", app_name),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to deploy app: {}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -248,6 +289,7 @@ struct CreateAppRequest {
     name: String,
 }
 
+#[instrument(skip(state))]
 async fn create_app(
     State(state): State<Arc<RwLock<ProxyState>>>,
     Json(payload): Json<CreateAppRequest>,
