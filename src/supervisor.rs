@@ -53,7 +53,6 @@ pub struct Supervisor {
 }
 
 struct RunningProcess {
-    app_id: String,
     child: Child,
     started_at: Instant,
 }
@@ -242,7 +241,6 @@ impl Supervisor {
             process_map.insert(
                 app.name.clone(),
                 RunningProcess {
-                    app_id: app.id.clone(),
                     child,
                     started_at: Instant::now(),
                 },

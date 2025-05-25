@@ -5,14 +5,16 @@ use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::RwLock;
 use tracing::{error, info, instrument};
+use tower::util::ServiceExt;
+use hyper::body::to_bytes;
 
-use crate::commands::app_command::{deploy, start, stop};
+use crate::commands::app_command::{start, stop};
 use crate::db;
 use crate::models::AppState;
 use crate::supervisor;
-use tokio::sync::oneshot;
+use crate::api;
 
 // Message types for communication between servers
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,8 +46,8 @@ struct AppInfo {
 }
 
 /// Shared state for the proxy server
-struct ProxyState {
-    db_pool: sqlx::Pool<sqlx::Sqlite>,
+pub struct ProxyState {
+    pub db_pool: sqlx::Pool<sqlx::Sqlite>,
 }
 
 /// Start the BinaryDrop server
@@ -109,27 +111,25 @@ async fn handle_request(
     state: Arc<RwLock<ProxyState>>,
     req: Request<Body>,
 ) -> Result<Response<Body>, Infallible> {
-    // Extract app name from host header
-    let host_parts = {
-        let host = req
-            .headers()
-            .get("host")
-            .and_then(|h| h.to_str().ok())
-            .unwrap_or("");
-
-        // Split by '.' to get subdomain
-        let parts: Vec<&str> = host.split('.').collect();
-        parts
-    };
-
-    let app_name = host_parts.first().cloned().unwrap_or("").to_string();
-    let path = req.uri().path();
-
-    // Handle different subdomains
+    let path = req.uri().path().to_string();
+    
     if path.starts_with("/____bindrop_api/") {
-        // Route to API server via message passing
-        match handle_api_request(Arc::clone(&state), req).await {
-            Ok(response) => Ok(response),
+        // Create the Axum router
+        let api_router = api::create_api_router(Arc::clone(&state));
+        
+        // Convert the Hyper request to an Axum request
+        let (parts, body) = req.into_parts();
+        let body_bytes = to_bytes(body).await.unwrap_or_default();
+        let axum_req = axum::http::Request::from_parts(parts, axum::body::Body::from(body_bytes));
+        
+        // Handle the request with Axum
+        match api_router.oneshot(axum_req).await {
+            Ok(response) => {
+                // Convert Axum response back to Hyper response
+                let (parts, body) = response.into_parts();
+                let body_bytes = to_bytes(body).await.unwrap_or_default();
+                Ok(Response::from_parts(parts, Body::from(body_bytes)))
+            }
             Err(e) => {
                 error!("API error: {}", e);
                 Ok(Response::builder()
@@ -138,12 +138,12 @@ async fn handle_request(
                     .unwrap())
             }
         }
-    } else if app_name == "admin" {
+    } else if path.starts_with("/admin") {
         // Regular admin interface
         Ok(admin_interface(state).await)
     } else {
         // Regular proxy to app
-        match proxy_to_app(state, &app_name, req).await {
+        match proxy_to_app(state, &path, req).await {
             Ok(response) => Ok(response),
             Err(e) => {
                 error!("Proxy error: {}", e);
@@ -153,130 +153,6 @@ async fn handle_request(
                     .unwrap())
             }
         }
-    }
-}
-
-/// Handle API requests by sending messages to the API server
-async fn handle_api_request(
-    state: Arc<RwLock<ProxyState>>,
-    req: Request<Body>,
-) -> anyhow::Result<Response<Body>> {
-    let path = req.uri().path();
-    let method = req.method().clone();
-    let pool = state.read().await;
-
-    // Parse path to determine API action
-    let api_request = match (method.as_str(), path) {
-        ("GET", "/____bindrop_api/apps") => {
-            let apps = db::apps::get_all(&pool.db_pool)
-                .await?
-                .into_iter()
-                .map(|app| AppInfo {
-                    id: app.id.to_string(),
-                    name: app.name,
-                    state: app.state.to_string(),
-                    host: app.host,
-                    port: app.port,
-                    process_id: app.process_id,
-                })
-                .collect::<Vec<AppInfo>>();
-            Some(serde_json::to_string(&apps)?)
-        }
-        ("GET", path) if path.starts_with("/____bindrop_api/apps/") => {
-            let name = path.trim_start_matches("/api/apps/").to_string();
-            let app = db::apps::get_by_name(&pool.db_pool, &name).await?;
-            if let Some(app) = app {
-                let app_info = AppInfo {
-                    id: app.id.to_string(),
-                    name: app.name,
-                    state: app.state.to_string(),
-                    host: app.host,
-                    port: app.port,
-                    process_id: app.process_id,
-                };
-                Some(serde_json::to_string(&app_info)?)
-            } else {
-                None
-            }
-        }
-        ("POST", path)
-            if path.starts_with("/____bindrop_api/apps/") && path.ends_with("/start") =>
-        {
-            let app_name = path
-                .trim_start_matches("/____bindrop_api/apps/")
-                .trim_end_matches("/start")
-                .to_string();
-            match start::execute(&app_name).await {
-                Ok(()) => Some(serde_json::to_string(&format!(
-                    "App '{}' started",
-                    app_name
-                ))?),
-                Err(e) => {
-                    error!("Failed to start app: {}", e);
-                    return Ok(Response::builder()
-                        .status(400)
-                        .body(Body::from("Failed to start app"))
-                        .unwrap());
-                }
-            }
-        }
-        ("POST", path) if path.starts_with("/____bindrop_api/apps/") && path.ends_with("/stop") => {
-            let app_name = path
-                .trim_start_matches("/____bindrop_api/apps/")
-                .trim_end_matches("/stop")
-                .to_string();
-            match stop::execute(&app_name).await {
-                Ok(()) => Some(serde_json::to_string(&format!(
-                    "App '{}' stoped",
-                    app_name
-                ))?),
-                Err(e) => {
-                    error!("Failed to stop app: {}", e);
-                    return Ok(Response::builder()
-                        .status(400)
-                        .body(Body::from("Failed to stop app"))
-                        .unwrap());
-                }
-            }
-        }
-        ("POST", path)
-            if path.starts_with("/____bindrop_api/apps/") && path.ends_with("/restart") =>
-        {
-            let app_name = path
-                .trim_start_matches("/____bindrop_api/apps/")
-                .trim_end_matches("/restart")
-                .to_string();
-
-            match start::execute(&app_name).await {
-                Ok(_) => Some(serde_json::to_string(&format!(
-                    "App '{}' restarted",
-                    app_name
-                ))?),
-                Err(err) => {
-                    error!("Failed to restart app: {}", err);
-                    return Ok(Response::builder()
-                        .status(400)
-                        .body(Body::from("Failed to restart app"))
-                        .unwrap());
-                }
-            }
-        }
-        _ => None,
-    };
-
-    // If we have a valid API request, send it to the API server
-    if let Some(response_body) = api_request {
-        // Build HTTP response
-        Ok(Response::builder()
-            .header("Content-Type", "application/json")
-            .body(Body::from(response_body))
-            .unwrap())
-    } else {
-        // Unknown API endpoint
-        Ok(Response::builder()
-            .status(404)
-            .body(Body::from("API endpoint not found"))
-            .unwrap())
     }
 }
 
@@ -377,9 +253,18 @@ async fn admin_interface(state: Arc<RwLock<ProxyState>>) -> Response<Body> {
 /// Proxy request to app
 async fn proxy_to_app(
     state: Arc<RwLock<ProxyState>>,
-    app_name: &str,
+    path: &str,
     req: Request<Body>,
 ) -> anyhow::Result<Response<Body>> {
+    // Extract app name from path
+    let app_name = path.trim_start_matches('/').split('/').next().unwrap_or("");
+    if app_name.is_empty() {
+        return Ok(Response::builder()
+            .status(404)
+            .body(Body::from("No app specified"))
+            .unwrap());
+    }
+
     let pool = state.read().await.db_pool.clone();
     let app = db::apps::get_by_name(&pool, app_name)
         .await?

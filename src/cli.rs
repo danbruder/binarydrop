@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::commands::{
-    app_command::{app_env, create, delete, deploy, logs, start, status, stop},
+    app_command::{app_env, create, delete, deploy, logs, status},
     server_command::serve,
 };
 
@@ -103,6 +103,8 @@ enum Commands {
 
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
+
+    // Need to send each of these to the admin api and handle each as an api
 
     match cli.command {
         Commands::Create { app_name } => create::execute(&app_name).await,
