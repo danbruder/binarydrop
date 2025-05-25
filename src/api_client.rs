@@ -1,3 +1,4 @@
+use crate::config::ClientConfig;
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use futures_util::stream::BoxStream;
@@ -23,22 +24,22 @@ pub struct AppInfo {
 }
 
 pub struct ApiClient {
-    base_url: String,
+    config: ClientConfig,
     client: Client,
 }
 
 impl ApiClient {
-    pub fn new(base_url: String) -> Self {
+    pub fn new(config: ClientConfig) -> Self {
         Self {
-            base_url,
             client: Client::new(),
+            config,
         }
     }
 
     pub async fn create_app(&self, app_name: &str) -> Result<()> {
         let response = self
             .client
-            .post(&format!("{}/apps", self.base_url))
+            .post(&format!("{}/apps", self.config.base_url))
             .json(&serde_json::json!({ "name": app_name }))
             .send()
             .await?;
@@ -55,7 +56,7 @@ impl ApiClient {
     pub async fn start_app(&self, app_name: &str) -> Result<()> {
         let response = self
             .client
-            .post(&format!("{}/apps/{}/start", self.base_url, app_name))
+            .post(&format!("{}/apps/{}/start", self.config.base_url, app_name))
             .send()
             .await?;
 
@@ -71,7 +72,7 @@ impl ApiClient {
     pub async fn stop_app(&self, app_name: &str) -> Result<()> {
         let response = self
             .client
-            .post(&format!("{}/apps/{}/stop", self.base_url, app_name))
+            .post(&format!("{}/apps/{}/stop", self.config.base_url, app_name))
             .send()
             .await?;
 
@@ -87,7 +88,10 @@ impl ApiClient {
     pub async fn restart_app(&self, app_name: &str) -> Result<()> {
         let response = self
             .client
-            .post(&format!("{}/apps/{}/restart", self.base_url, app_name))
+            .post(&format!(
+                "{}/apps/{}/restart",
+                self.config.base_url, app_name
+            ))
             .send()
             .await?;
 
@@ -103,7 +107,7 @@ impl ApiClient {
     pub async fn delete_app(&self, app_name: &str) -> Result<()> {
         let response = self
             .client
-            .delete(&format!("{}/apps/{}", self.base_url, app_name))
+            .delete(&format!("{}/apps/{}", self.config.base_url, app_name))
             .send()
             .await?;
 
@@ -125,7 +129,10 @@ impl ApiClient {
 
         let response = self
             .client
-            .post(&format!("{}/apps/{}/deploy", self.base_url, app_name))
+            .post(&format!(
+                "{}/apps/{}/deploy",
+                self.config.base_url, app_name
+            ))
             .multipart(form)
             .send()
             .await?;
@@ -148,7 +155,7 @@ impl ApiClient {
     ) -> Result<()> {
         let response = self
             .client
-            .post(&format!("{}/apps/{}/env", self.base_url, app_name))
+            .post(&format!("{}/apps/{}/env", self.config.base_url, app_name))
             .json(&serde_json::json!({ "key": key, "value": value, "delete": delete }))
             .send()
             .await?;
@@ -164,8 +171,8 @@ impl ApiClient {
 
     pub async fn get_status(&self, app_name: Option<&str>) -> Result<()> {
         let url = match app_name {
-            Some(name) => format!("{}/apps/{}", self.base_url, name),
-            None => format!("{}/apps", self.base_url),
+            Some(name) => format!("{}/apps/{}", self.config.base_url, name),
+            None => format!("{}/apps", self.config.base_url),
         };
 
         let response = self.client.get(&url).send().await?;
@@ -183,7 +190,7 @@ impl ApiClient {
     pub async fn get_logs(&self, app_name: &str, lines: usize, follow: bool) -> Result<LogStream> {
         let url = format!(
             "{}/apps/{}/logs?lines={}&follow={}",
-            self.base_url, app_name, lines, follow
+            self.config.base_url, app_name, lines, follow
         );
         let response = self.client.get(&url).send().await?;
         if response.status().is_success() {
@@ -209,7 +216,7 @@ impl ApiClient {
     }
 
     pub async fn get_app_info(&self, app_name: &str) -> Result<AppInfo> {
-        let url = format!("{}/apps/{}", self.base_url, app_name);
+        let url = format!("{}/apps/{}", self.config.base_url, app_name);
         let response = self.client.get(&url).send().await?;
         if response.status().is_success() {
             let app_info: AppInfo = response.json().await?;

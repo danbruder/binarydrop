@@ -11,6 +11,7 @@ use tower::util::ServiceExt;
 use tracing::{error, info, instrument};
 
 use crate::api;
+use crate::config::ServerConfig;
 use crate::db;
 use crate::models::AppState;
 use crate::supervisor;
@@ -51,7 +52,7 @@ pub struct ProxyState {
 
 /// Start the BinaryDrop server
 #[instrument]
-pub async fn execute(host: &str, port: u16) -> Result<()> {
+pub async fn execute(config: ServerConfig) -> Result<()> {
     // Connect to database
     let pool = db::init_pool().await?;
     supervisor::init(pool.clone()).await?;
@@ -62,9 +63,12 @@ pub async fn execute(host: &str, port: u16) -> Result<()> {
     }));
 
     // Parse host and port for proxy server
-    let addr: SocketAddr = format!("{}:{}", host, port)
+    let addr: SocketAddr = format!("{}:{}", config.host, config.port)
         .parse()
-        .context(format!("Invalid host or port: {}:{}", host, port))?;
+        .context(format!(
+            "Invalid host or port: {}:{}",
+            config.host, config.port
+        ))?;
 
     // Create service for proxy server
     let make_svc = make_service_fn(move |_conn| {
@@ -82,11 +86,11 @@ pub async fn execute(host: &str, port: u16) -> Result<()> {
 
     info!(
         "Starting BinaryDrop proxy server on http://{}:{}",
-        host, port
+        config.host, config.port
     );
     println!(
         "BinaryDrop proxy server running at http://{}:{}",
-        host, port
+        config.host, config.port
     );
     println!("Press Ctrl+C to stop");
 

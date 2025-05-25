@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 
 use crate::api_client::ApiClient;
 use crate::commands::server_command::serve;
+use crate::config::{ClientConfig, ServerConfig};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -88,24 +89,13 @@ enum Commands {
     },
 
     /// Start the BinaryDrop server
-    Serve {
-        /// Host to bind to
-        #[arg(long, default_value = "0.0.0.0")]
-        host: String,
-
-        /// Port to listen on
-        #[arg(short, long, default_value = "80")]
-        port: u16,
-    },
-}
-
-fn get_api_base_url() -> String {
-    std::env::var("BINDROP_API_URL").unwrap_or_else(|_| "http://localhost:3000".to_string())
+    Serve,
 }
 
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
-    let api_client = ApiClient::new(get_api_base_url());
+    let config = ClientConfig::load()?;
+    let api_client = ApiClient::new(config);
 
     match cli.command {
         Commands::Create { app_name } => api_client.create_app(&app_name).await,
@@ -143,11 +133,9 @@ pub async fn run() -> Result<()> {
             }
             Ok(())
         }
-        Commands::Serve { host, port } => {
-            // if std::env::var("BINDROP_SERVER_MODE").is_err() {
-            //     return Err(anyhow::anyhow!("The serve command can only be run in server mode."));
-            // }
-            serve::execute(&host, port).await
+        Commands::Serve => {
+            let config = ServerConfig::load()?;
+            serve::execute(config).await
         }
     }
 }

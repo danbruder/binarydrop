@@ -9,42 +9,35 @@ static TEST_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 static TEST_CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Config {
-    pub server: ServerConfig,
-    pub apps: AppsConfig,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
     pub proxy_host: String,
     pub proxy_port: u16,
+    pub url: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AppsConfig {
-    pub data_dir: PathBuf,
-    pub logs_dir: PathBuf,
-    pub binaries_dir: PathBuf,
-    pub port_range_start: u16,
+pub struct ClientConfig {
+    pub base_url: String,
 }
 
-impl Default for Config {
+impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            server: ServerConfig {
-                host: "0.0.0.0".to_string(),
-                port: 3000,
-                proxy_host: "0.0.0.0".to_string(),
-                proxy_port: 80,
-            },
-            apps: AppsConfig {
-                data_dir: get_data_dir().unwrap_or_else(|_| PathBuf::from("./data")),
-                logs_dir: get_logs_dir().unwrap_or_else(|_| PathBuf::from("./logs")),
-                binaries_dir: get_binaries_dir().unwrap_or_else(|_| PathBuf::from("./binaries")),
-                port_range_start: 8000,
-            },
+            host: "0.0.0.0".to_string(),
+            port: 3000,
+            proxy_host: "0.0.0.0".to_string(),
+            proxy_port: 80,
+            url: "http://admin-api.localhost".to_string(),
+        }
+    }
+}
+
+impl Default for ClientConfig {
+    fn default() -> Self {
+        Self {
+            base_url: "http://admin-api.localhost".to_string(),
         }
     }
 }
@@ -89,67 +82,9 @@ pub fn get_data_dir() -> Result<PathBuf> {
     Ok(data_dir)
 }
 
-/// Get the logs directory
-pub fn get_logs_dir() -> Result<PathBuf> {
-    let logs_dir = get_data_dir()?.join("logs");
-
-    if !logs_dir.exists() {
-        fs::create_dir_all(&logs_dir).context("Failed to create logs directory")?;
-    }
-
-    Ok(logs_dir)
-}
-
-/// Get the binaries directory
-pub fn get_binaries_dir() -> Result<PathBuf> {
-    let binaries_dir = get_data_dir()?.join("binaries");
-
-    if !binaries_dir.exists() {
-        fs::create_dir_all(&binaries_dir).context("Failed to create binaries directory")?;
-    }
-
-    Ok(binaries_dir)
-}
-
-/// Get the config file path
-pub fn get_config_file_path() -> Result<PathBuf> {
-    Ok(get_config_dir()?.join("config.toml"))
-}
-
-/// Load the config from the config file
-pub fn load() -> Result<Config> {
-    let config_path = get_config_file_path()?;
-
-    if config_path.exists() {
-        let config_str = fs::read_to_string(&config_path).context("Failed to read config file")?;
-
-        let config: Config = toml::from_str(&config_str).context("Failed to parse config file")?;
-
-        Ok(config)
-    } else {
-        // Create default config
-        let config = Config::default();
-        save(&config)?;
-
-        Ok(config)
-    }
-}
-
-/// Save the config to the config file
-pub fn save(config: &Config) -> Result<()> {
-    let config_path = get_config_file_path()?;
-
-    let config_str = toml::to_string_pretty(config).context("Failed to serialize config")?;
-
-    fs::write(&config_path, config_str).context("Failed to write config file")?;
-
-    Ok(())
-}
-
 /// Get a unique port for a new app
 pub async fn get_next_available_port(db_pool: &sqlx::Pool<sqlx::Sqlite>) -> Result<u16> {
-    let config = load()?;
-    let start_port = config.apps.port_range_start;
+    let start_port = 8000;
 
     // Get all currently used ports
     let rows = sqlx::query("SELECT port FROM apps")
@@ -200,6 +135,69 @@ pub fn get_app_data_dir(app_name: &str) -> Result<PathBuf> {
 
 /// Get the app log file path
 pub fn get_app_log_path(app_name: &str) -> Result<PathBuf> {
-    let logs_dir = get_logs_dir()?;
-    Ok(logs_dir.join(format!("{}.log", app_name)))
+    Ok(get_app_dir(app_name)?.join(format!("{}.log", app_name)))
+}
+
+impl ServerConfig {
+    pub fn load() -> Result<Self> {
+        let config_path = Self::get_config_path()?;
+
+        if !config_path.exists() {
+            let config = Self::default();
+            config.save()?;
+            return Ok(config);
+        }
+
+        let contents = fs::read_to_string(config_path)?;
+        let config: Self = toml::from_str(&contents)?;
+        Ok(config)
+    }
+
+    pub fn save(&self) -> Result<()> {
+        let config_path = Self::get_config_path()?;
+        let contents = toml::to_string_pretty(self)?;
+        fs::write(config_path, contents)?;
+        Ok(())
+    }
+
+    fn get_config_path() -> Result<PathBuf> {
+        let mut path =
+            dirs::config_dir().ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?;
+        path.push("bindrop");
+        fs::create_dir_all(&path)?;
+        path.push("server-config.toml");
+        Ok(path)
+    }
+}
+
+impl ClientConfig {
+    pub fn load() -> Result<Self> {
+        let config_path = Self::get_config_path()?;
+
+        if !config_path.exists() {
+            let config = Self::default();
+            config.save()?;
+            return Ok(config);
+        }
+
+        let contents = fs::read_to_string(config_path)?;
+        let config: Self = toml::from_str(&contents)?;
+        Ok(config)
+    }
+
+    pub fn save(&self) -> Result<()> {
+        let config_path = Self::get_config_path()?;
+        let contents = toml::to_string_pretty(self)?;
+        fs::write(config_path, contents)?;
+        Ok(())
+    }
+
+    fn get_config_path() -> Result<PathBuf> {
+        let mut path =
+            dirs::config_dir().ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?;
+        path.push("bindrop");
+        fs::create_dir_all(&path)?;
+        path.push("client-config.toml");
+        Ok(path)
+    }
 }
