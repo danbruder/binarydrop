@@ -2,7 +2,6 @@ use reqwest::Client;
 use anyhow::{anyhow, Result};
 use futures_util::stream::BoxStream;
 use futures_util::StreamExt;
-use reqwest::Response;
 use bytes::Bytes;
 
 pub enum LogStream {

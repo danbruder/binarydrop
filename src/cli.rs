@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::commands::{
-    app_command::{app_env, create, delete, deploy, logs, status},
     server_command::serve,
 };
 use crate::api_client::ApiClient;

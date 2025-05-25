@@ -11,13 +11,12 @@ use axum::{
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use std::collections::HashMap;
-use crate::commands::app_command::logs;
 use axum::http::StatusCode;
 use axum::response::sse::{Sse, Event};
-use futures_util::stream::{self, Stream, StreamExt, unfold};
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader, AsyncSeekExt, SeekFrom};
 use std::time::Duration;
+use futures_util::stream::unfold;
 
 pub fn create_api_router(state: Arc<RwLock<ProxyState>>) -> Router {
     Router::new()

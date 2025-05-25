@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use http::HeaderMap;
 use hyper::body::to_bytes;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Client, Request, Response, Server};
@@ -12,7 +11,6 @@ use tower::util::ServiceExt;
 use tracing::{error, info, instrument};
 
 use crate::api;
-use crate::commands::app_command::{start, stop};
 use crate::db;
 use crate::models::AppState;
 use crate::supervisor;
