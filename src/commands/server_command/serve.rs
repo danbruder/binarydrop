@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use http::HeaderMap;
+use hyper::body::to_bytes;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Client, Request, Response, Server};
 use serde::{Deserialize, Serialize};
@@ -6,15 +8,14 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info, instrument};
 use tower::util::ServiceExt;
-use hyper::body::to_bytes;
+use tracing::{error, info, instrument};
 
+use crate::api;
 use crate::commands::app_command::{start, stop};
 use crate::db;
 use crate::models::AppState;
 use crate::supervisor;
-use crate::api;
 
 // Message types for communication between servers
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,7 +74,7 @@ pub async fn execute(host: &str, port: u16) -> Result<()> {
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
                 let state = Arc::clone(&state);
-                async move { handle_request(state, req).await }
+                async move { handle_request(req, state).await }
             }))
         }
     });
@@ -108,41 +109,26 @@ pub async fn execute(host: &str, port: u16) -> Result<()> {
 
 /// Handle incoming requests to the proxy server
 async fn handle_request(
-    state: Arc<RwLock<ProxyState>>,
     req: Request<Body>,
+    state: Arc<RwLock<ProxyState>>,
 ) -> Result<Response<Body>, Infallible> {
-    let path = req.uri().path().to_string();
-    
-    if path.starts_with("/____bindrop_api/") {
-        // Create the Axum router
+    let headers = req.headers().clone();
+    let host = headers
+        .get("host")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    if host.starts_with("admin-api.") {
         let api_router = api::create_api_router(Arc::clone(&state));
-        
-        // Convert the Hyper request to an Axum request
-        let (parts, body) = req.into_parts();
+        let response = api_router.oneshot(req).await.unwrap();
+        let (parts, body) = response.into_parts();
         let body_bytes = to_bytes(body).await.unwrap_or_default();
-        let axum_req = axum::http::Request::from_parts(parts, axum::body::Body::from(body_bytes));
-        
-        // Handle the request with Axum
-        match api_router.oneshot(axum_req).await {
-            Ok(response) => {
-                // Convert Axum response back to Hyper response
-                let (parts, body) = response.into_parts();
-                let body_bytes = to_bytes(body).await.unwrap_or_default();
-                Ok(Response::from_parts(parts, Body::from(body_bytes)))
-            }
-            Err(e) => {
-                error!("API error: {}", e);
-                Ok(Response::builder()
-                    .status(500)
-                    .body(Body::from(format!("API error: {}", e)))
-                    .unwrap())
-            }
-        }
-    } else if path.starts_with("/admin") {
+        Ok(Response::from_parts(parts, Body::from(body_bytes)))
+    } else if req.uri().path().starts_with("/admin") {
         // Regular admin interface
         Ok(admin_interface(state).await)
     } else {
         // Regular proxy to app
+        let path = req.uri().path().to_string();
         match proxy_to_app(state, &path, req).await {
             Ok(response) => Ok(response),
             Err(e) => {

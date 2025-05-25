@@ -34,6 +34,7 @@ tower = "0.4"
 tower-http = { version = "0.4", features = ["trace"] }
 hyper = { version = "0.14", features = ["full"] }
 hyper-reverse-proxy = "0.5.1"
+http = "0.2"
 
 [[bin]]
 name = "bindrop"
