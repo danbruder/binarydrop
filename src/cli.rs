@@ -1,10 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-use crate::commands::{
-    server_command::serve,
-};
 use crate::api_client::ApiClient;
+use crate::commands::server_command::serve;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -115,8 +113,16 @@ pub async fn run() -> Result<()> {
         Commands::Stop { app_name } => api_client.stop_app(&app_name).await,
         Commands::Restart { app_name } => api_client.restart_app(&app_name).await,
         Commands::Delete { app_name } => api_client.delete_app(&app_name).await,
-        Commands::Deploy { app_name, binary_path } => api_client.deploy_app(&app_name, &binary_path).await,
-        Commands::Env { app_name, key, value, delete } => api_client.set_env(&app_name, &key, &value, delete).await,
+        Commands::Deploy {
+            app_name,
+            binary_path,
+        } => api_client.deploy_app(&app_name, &binary_path).await,
+        Commands::Env {
+            app_name,
+            key,
+            value,
+            delete,
+        } => api_client.set_env(&app_name, &key, &value, delete).await,
         Commands::Status { app_name } => api_client.get_status(app_name.as_deref()).await,
         Commands::Logs {
             app_name,
@@ -136,12 +142,12 @@ pub async fn run() -> Result<()> {
                 }
             }
             Ok(())
-        },
+        }
         Commands::Serve { host, port } => {
-            if std::env::var("BINDROP_SERVER_MODE").is_err() {
-                return Err(anyhow::anyhow!("The serve command can only be run in server mode."));
-            }
+            // if std::env::var("BINDROP_SERVER_MODE").is_err() {
+            //     return Err(anyhow::anyhow!("The serve command can only be run in server mode."));
+            // }
             serve::execute(&host, port).await
-        },
+        }
     }
 }
