@@ -305,12 +305,13 @@ async fn deploy_app(
     }
 }
 
-#[instrument(skip(_state))]
+#[instrument(skip(state))]
 async fn delete_app(
-    State(_state): State<Arc<RwLock<ProxyState>>>,
+    State(state): State<Arc<RwLock<ProxyState>>>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
-    match delete::execute(&name).await {
+    let pool = state.read().await.db_pool.clone();
+    match delete::execute(&pool, &name).await {
         Ok(_) => (
             axum::http::StatusCode::OK,
             format!("App '{}' deleted", name),
