@@ -1,5 +1,3 @@
-use std::process::Child;
-
 use sqlx::{Pool, Sqlite};
 use tracing::{info, instrument};
 
@@ -46,10 +44,6 @@ pub async fn execute<H: Handle>(
     let app = db::apps::get_by_name(pool, app_name)
         .await?
         .ok_or_else(|| StartError::AppNotFound(app_name.to_string()))?;
-
-    if app.is_running() {
-        return Err(StartError::AppAlreadyRunning(app_name.to_string()));
-    }
 
     if !app.is_deployed() {
         return Err(StartError::AppNotDeployed(app.name.clone()));
@@ -124,24 +118,6 @@ mod test {
             .await
             .unwrap_err();
         let want = super::StartError::AppNotDeployed(app_name.to_string());
-
-        assert_eq!(got, want);
-    }
-
-    #[tokio::test]
-    async fn test_starting_already_running_app() {
-        let pool = crate::db::test::get_test_pool().await;
-        let app_name = "app";
-        let app = App::new(app_name, 8080)
-            .unwrap()
-            .deployed("some_path".into(), "some_hash".into())
-            .running(1);
-        apps::save(&pool, &app).await.unwrap();
-
-        let got = super::execute(&pool, app_name, TestProvider)
-            .await
-            .unwrap_err();
-        let want = super::StartError::AppAlreadyRunning(app_name.to_string());
 
         assert_eq!(got, want);
     }
