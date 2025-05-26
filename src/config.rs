@@ -101,7 +101,7 @@ pub async fn get_next_available_port(
     let start_port = 8000;
 
     // Get all currently used ports
-    let rows = sqlx::query("SELECT max(port) FROM apps")
+    let rows = sqlx::query("SELECT port FROM apps")
         .fetch_all(db_pool)
         .await
         .context("Failed to query app ports from database")

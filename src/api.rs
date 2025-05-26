@@ -336,7 +336,7 @@ async fn create_app(
     Json(payload): Json<CreateAppRequest>,
 ) -> impl IntoResponse {
     let pool = state.read().await.db_pool.clone();
-    match create::execute(&payload.name, &pool).await {
+    match create::execute(&pool, &payload.name).await {
         Ok(_) => (
             axum::http::StatusCode::CREATED,
             format!("App '{}' created", payload.name),
