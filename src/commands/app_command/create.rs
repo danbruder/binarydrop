@@ -50,7 +50,7 @@ mod test {
     use super::*;
     use crate::db::test::get_test_pool;
     use crate::models::App;
-    use crate::providers::cmd::CmdProvider;
+    use crate::providers::test::TestProvider;
 
     #[tokio::test]
     async fn test_create_app_already_exists() {
@@ -59,7 +59,7 @@ mod test {
         let app = App::new(app_name).unwrap();
         db::apps::save(&pool, &app).await.unwrap();
 
-        let got = execute(&pool, app_name, CmdProvider {}).await.unwrap_err();
+        let got = execute(&pool, app_name, TestProvider {}).await.unwrap_err();
         match got {
             AppCreateError::AppAlreadyExists(ref n) if n == app_name => {}
             _ => panic!("Expected AppAlreadyExists, got: {:?}", got),
@@ -70,7 +70,7 @@ mod test {
     async fn test_create_app_happy_path() {
         let pool = get_test_pool().await;
         let app_name = "test_app_happy";
-        execute(&pool, app_name, CmdProvider {}).await.unwrap();
+        execute(&pool, app_name, TestProvider {}).await.unwrap();
         let app = db::apps::get_by_name(&pool, app_name).await.unwrap();
         assert!(app.is_some());
     }
@@ -79,7 +79,7 @@ mod test {
     async fn test_create_app_invalid_name() {
         let pool = get_test_pool().await;
         let app_name = "";
-        let got = execute(&pool, app_name, CmdProvider {}).await.unwrap_err();
+        let got = execute(&pool, app_name, TestProvider {}).await.unwrap_err();
         match got {
             AppCreateError::AppError(_) => {}
             _ => panic!("Expected AppError for invalid name, got: {:?}", got),
