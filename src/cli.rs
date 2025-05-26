@@ -90,6 +90,8 @@ enum Commands {
 
     /// Start the BinaryDrop server
     Serve,
+
+    Config,
 }
 
 #[tracing::instrument]
@@ -137,6 +139,20 @@ pub async fn run() -> Result<()> {
         Commands::Serve => {
             let config = ServerConfig::load()?;
             serve::execute(config).await
+        }
+        Commands::Config => {
+            let client_config = ClientConfig::load()?;
+            let client_config_path = ClientConfig::get_config_path()?;
+            let server_config = ServerConfig::load()?;
+            let server_config_path = ServerConfig::get_config_path()?;
+
+            println!("Client config: {}", client_config_path.display());
+            println!("{}", toml::to_string(&client_config)?);
+
+            println!("Server config: {}", server_config_path.display());
+            println!("{}", toml::to_string(&server_config)?);
+
+            Ok(())
         }
     }
 }

@@ -63,11 +63,11 @@ pub async fn execute(config: ServerConfig) -> Result<()> {
     }));
 
     // Parse host and port for proxy server
-    let addr: SocketAddr = format!("{}:{}", config.host, config.port)
+    let addr: SocketAddr = format!("{}:{}", config.host, config.proxy_port)
         .parse()
         .context(format!(
             "Invalid host or port: {}:{}",
-            config.host, config.port
+            config.host, config.proxy_port
         ))?;
 
     // Create service for proxy server
@@ -86,11 +86,11 @@ pub async fn execute(config: ServerConfig) -> Result<()> {
 
     info!(
         "Starting BinaryDrop proxy server on http://{}:{}",
-        config.host, config.port
+        config.host, config.proxy_port
     );
     println!(
         "BinaryDrop proxy server running at http://{}:{}",
-        config.host, config.port
+        config.host, config.proxy_port
     );
     println!("Press Ctrl+C to stop");
 
@@ -229,7 +229,7 @@ async fn admin_interface(state: Arc<RwLock<ProxyState>>) -> Response<Body> {
     </table>
     <h2>API Endpoints</h2>
     <ul>
-        <li><a href="/api/apps">GET /api/apps</a> - List all apps</li>
+        <li>GET /api/apps - List all apps</li>
         <li>POST /api/apps - Create a new app</li>
         <li>GET /api/apps/:id - Get app details</li>
         <li>DELETE /api/apps/:id - Delete an app</li>

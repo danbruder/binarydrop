@@ -2,6 +2,7 @@ use crate::commands::app_command::create;
 use crate::commands::app_command::deploy;
 use crate::commands::app_command::{start, stop};
 use crate::commands::app_command::delete;
+use crate::commands::app_command::app_env;
 use crate::commands::server_command::serve::ProxyState;
 use crate::db;
 use axum::extract::DefaultBodyLimit;
@@ -15,6 +16,7 @@ use axum::{
 };
 use bytes::Bytes;
 use futures_util::stream::unfold;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,6 +36,7 @@ pub fn create_api_router(state: Arc<RwLock<ProxyState>>) -> Router {
         .route("/apps/:name/restart", post(restart_app))
         .route("/apps/:name/logs", get(get_logs))
         .route("/apps/:name/deploy", post(deploy_app))
+        .route("/apps/:name/env", post(set_env))
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024)) // 100MB limit
         .with_state(state)
 }
@@ -359,4 +362,30 @@ struct AppInfo {
     host: String,
     port: u16,
     process_id: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SetEnvRequest {
+    key: String,
+    value: String,
+    delete: Option<bool>,
+}
+
+async fn set_env(
+    State(_state): State<Arc<RwLock<ProxyState>>>,
+    Path(name): Path<String>,
+    Json(payload): Json<SetEnvRequest>,
+) -> impl IntoResponse {
+    match app_env::set_env(&name, &payload.key, &payload.value, payload.delete.unwrap_or(false)).await {
+        Ok(_) => (
+            axum::http::StatusCode::OK,
+            format!("Environment variable {} set for app '{}'", payload.key, name),
+        )
+            .into_response(),
+        Err(e) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to set environment variable: {}", e),
+        )
+            .into_response(),
+    }
 }

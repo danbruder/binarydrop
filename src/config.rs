@@ -11,7 +11,6 @@ static TEST_CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServerConfig {
     pub host: String,
-    pub port: u16,
     pub proxy_host: String,
     pub proxy_port: u16,
     pub url: String,
@@ -26,7 +25,6 @@ impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             host: "0.0.0.0".to_string(),
-            port: 3000,
             proxy_host: "0.0.0.0".to_string(),
             proxy_port: 80,
             url: "http://admin-api.localhost".to_string(),
@@ -164,7 +162,7 @@ impl ServerConfig {
         Ok(())
     }
 
-    fn get_config_path() -> Result<PathBuf> {
+    pub fn get_config_path() -> Result<PathBuf> {
         let mut path =
             dirs::config_dir().ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?;
         path.push("bindrop");
@@ -200,7 +198,7 @@ impl ClientConfig {
         Ok(())
     }
 
-    fn get_config_path() -> Result<PathBuf> {
+    pub fn get_config_path() -> Result<PathBuf> {
         let mut path =
             dirs::config_dir().ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?;
         path.push("bindrop");
