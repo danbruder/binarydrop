@@ -74,7 +74,7 @@ mod test {
         let app_name = "test_app";
 
         // Create and save a running app
-        let app = App::new(app_name, 8080).unwrap().running(1234);
+        let app = App::new(app_name).unwrap().running(1234);
         db::apps::save(&pool, &app).await.unwrap();
 
         // Create app directory
@@ -96,7 +96,7 @@ mod test {
         let app_name = "test_app";
 
         // Create and save a stopped app
-        let app = App::new(app_name, 8080).unwrap();
+        let app = App::new(app_name).unwrap();
         db::apps::save(&pool, &app).await.unwrap();
 
         // Create app directory

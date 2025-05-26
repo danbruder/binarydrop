@@ -11,11 +11,10 @@ pub struct App {
     pub state: AppState,
     pub binary_path: Option<String>,
     pub binary_hash: Option<String>,
-    pub port: u16,
+    pub port: Option<u16>,
     pub environment: HashMap<String, String>,
     pub process_id: Option<u32>,
     pub host: String,
-    // New fields for process management
     pub restart_policy: RestartPolicy,
     pub max_restarts: Option<u32>,
     pub restart_count: u32,
@@ -35,15 +34,11 @@ pub enum AppError {
 }
 
 impl App {
-    pub fn new(name: &str, port: u16) -> Result<Self, AppError> {
+    pub fn new(name: &str) -> Result<Self, AppError> {
         let now = Utc::now();
 
         if !is_valid_app_name(name) {
             return Err(AppError::InvalidName(name.to_string()));
-        }
-
-        if port < 1024 {
-            return Err(AppError::InvalidPort(port));
         }
 
         Ok(Self {
@@ -52,21 +47,24 @@ impl App {
             created_at: now,
             updated_at: now,
             state: AppState::Created,
-            binary_path: None,
-            binary_hash: None,
-            port,
             environment: HashMap::new(),
-            process_id: None,
+            // Where to find it
+            port: None,
             host: "0.0.0.0".to_string(),
-            // New field defaults
+            // How to handle failure
             restart_policy: RestartPolicy::OnFailure,
+            health_check: Some(HealthCheck::default()),
             max_restarts: Some(5),
             restart_count: 0,
-            last_exit_code: None,
-            last_exit_time: None,
+            // Cmd config stuff
+            binary_path: None,
+            binary_hash: None,
             startup_timeout: 30,
             shutdown_timeout: 10,
-            health_check: Some(HealthCheck::default()),
+            // runtime state
+            process_id: None,
+            last_exit_code: None,
+            last_exit_time: None,
         })
     }
 
@@ -79,6 +77,13 @@ impl App {
                 // Only restart on non-zero exit codes
                 self.last_exit_code.unwrap_or(0) != 0
             }
+        }
+    }
+
+    pub fn with_port(&self, port: u16) -> Self {
+        Self {
+            port: Some(port),
+            ..self.clone()
         }
     }
 

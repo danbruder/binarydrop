@@ -41,7 +41,7 @@ struct AppInfo {
     name: String,
     state: String,
     host: String,
-    port: u16,
+    port: Option<u16>,
     process_id: Option<u32>,
 }
 
@@ -214,12 +214,12 @@ async fn admin_interface(state: Arc<RwLock<ProxyState>>) -> Response<Body> {
             app.name,
             status_class,
             app.state,
-            app.port,
+            app.port.map_or("-".to_string(), |p| p.to_string()),
             pid,
             app.host,
-            app.port,
+            app.port.map_or("-".to_string(), |p| p.to_string()),
             app.host,
-            app.port,
+            app.port.map_or("-".to_string(), |p| p.to_string()),
         ));
     }
 
@@ -268,7 +268,12 @@ async fn proxy_to_app(
 
     // Create URI for proxying
     let path_and_query = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("");
-    let uri = format!("http://{}:{}{}", app.host, app.port, path_and_query);
+    let uri = format!(
+        "http://{}:{}{}",
+        app.host,
+        app.port.map_or("".to_string(), |p| p.to_string()),
+        path_and_query
+    );
 
     // Create new request
     let (parts, body) = req.into_parts();

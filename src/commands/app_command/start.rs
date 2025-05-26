@@ -111,7 +111,7 @@ mod test {
     async fn test_starting_not_deployed_app() {
         let pool = crate::db::test::get_test_pool().await;
         let app_name = "app";
-        let app = App::new(app_name, 8080).unwrap();
+        let app = App::new(app_name).unwrap();
         apps::save(&pool, &app).await.unwrap();
 
         let got = super::execute(&pool, app_name, TestProvider)
@@ -126,9 +126,7 @@ mod test {
     async fn test_start_happy_path() {
         let pool = crate::db::test::get_test_pool().await;
         let app_name = "app";
-        let app = App::new(app_name, 8080)
-            .unwrap()
-            .deployed("some_path".into(), "some_hash".into());
+        let app = App::new(app_name).unwrap();
         apps::save(&pool, &app).await.unwrap();
 
         let got = super::execute(&pool, app_name, TestProvider).await.unwrap();

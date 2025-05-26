@@ -18,7 +18,7 @@ pub async fn execute(app_name: Option<&str>) -> Result<()> {
 
             println!("App: {}", app.name);
             println!("Status: {}", app.state);
-            println!("Port: {}", app.port);
+            println!("Port: {:?}", app.port);
 
             if let Some(pid) = app.process_id {
                 println!("Process ID: {}", pid);
@@ -61,7 +61,10 @@ pub async fn execute(app_name: Option<&str>) -> Result<()> {
 
                 println!(
                     "{:<20} {:<10} {:<8} {:<10}",
-                    app.name, app.state, app.port, pid
+                    app.name,
+                    app.state,
+                    app.port.map_or("-".to_string(), |p| p.to_string()),
+                    pid
                 );
             }
         }

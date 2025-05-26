@@ -3,6 +3,7 @@ use tracing::{info, instrument};
 use crate::config;
 use crate::models::App;
 use crate::providers::{Handle, Provider};
+use sqlx::{Pool, Sqlite};
 use std::process::Child;
 use std::process::Command;
 use std::process::Stdio;
@@ -27,8 +28,24 @@ impl Handle for Child {
     }
 }
 
+struct SetupResult {
+    port: u16,
+}
+
 impl Provider for CmdProvider {
     type Handle = Child;
+
+    async fn setup(&self, pool: &Pool<Sqlite>, app: &App) -> anyhow::Result<App> {
+        // Create app directory
+        let _ = config::get_app_dir(&app.name)?;
+
+        // Get next available port
+        let port = config::get_next_available_port(pool).await?;
+
+        let app = app.with_port(port);
+
+        Ok(app)
+    }
 
     #[instrument(skip(self, app))]
     async fn start(&self, app: &App) -> anyhow::Result<Child> {
@@ -56,7 +73,7 @@ impl Provider for CmdProvider {
         let mut cmd = Command::new(binary_path);
 
         // Add environment variables
-        cmd.env("PORT", app.port.to_string());
+        cmd.env("PORT", app.port.map_or("".to_string(), |p| p.to_string()));
         cmd.env("APP_NAME", &app.name);
         cmd.env("DATA_DIR", &data_dir);
         for (key, value) in &app.environment {

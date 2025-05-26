@@ -356,7 +356,7 @@ struct AppInfo {
     name: String,
     state: String,
     host: String,
-    port: u16,
+    port: Option<u16>,
     process_id: Option<u32>,
 }
 
