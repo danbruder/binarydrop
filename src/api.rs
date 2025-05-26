@@ -104,8 +104,10 @@ async fn start_app(
     State(state): State<Arc<RwLock<ProxyState>>>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
+    use crate::providers::cmd::CmdProvider;
     let pool = state.read().await.db_pool.clone();
-    match start::execute(&pool, &name).await {
+
+    match start::execute(&pool, &name, CmdProvider {}).await {
         Ok(_) => (
             axum::http::StatusCode::OK,
             format!("App '{}' started", name),
@@ -247,12 +249,13 @@ async fn get_logs(
     }
 }
 
-#[instrument(skip(_state, multipart))]
+#[instrument(skip(state, multipart))]
 async fn deploy_app(
-    State(_state): State<Arc<RwLock<ProxyState>>>,
+    State(state): State<Arc<RwLock<ProxyState>>>,
     Path(name): Path<String>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
+    let pool = state.read().await.db_pool.clone();
     // Get the binary file from the multipart form
     let mut binary_data: Option<Bytes> = None;
 
@@ -288,7 +291,7 @@ async fn deploy_app(
     tracing::info!("Passing binary data to deploy command");
 
     // Pass the binary data to the deploy command
-    match deploy::execute(&name, &binary_data).await {
+    match deploy::execute(&pool, &name, &binary_data).await {
         Ok(_) => (
             StatusCode::OK,
             format!("App '{}' deployed successfully", name),

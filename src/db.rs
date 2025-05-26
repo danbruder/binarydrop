@@ -538,7 +538,7 @@ pub mod test {
 
     pub async fn get_test_pool() -> Pool<Sqlite> {
         let pool = SqlitePoolOptions::new()
-            .max_connections(5)
+            .max_connections(3)
             .connect(":memory:")
             .await
             .unwrap();

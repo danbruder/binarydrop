@@ -45,7 +45,7 @@ pub async fn execute(pool: &Pool<Sqlite>, app_name: &str, binary_data: &[u8]) ->
     copy_and_set_permissions(&target_path, binary_data)?;
 
     // Update and save to database
-    let app = app.deploy(target_path, hash);
+    let app = app.deployed(target_path, hash);
     db::apps::save(&pool, &app).await?;
 
     info!("Deployed binary to app '{}'", app_name);

@@ -96,7 +96,7 @@ impl App {
     }
 
     pub fn is_deployed(&self) -> bool {
-        matches!(self.state, AppState::Deployed)
+        self.binary_path.is_some() && self.binary_hash.is_some()
     }
 
     pub fn is_hash_changed(&self, new_hash: &str) -> bool {
@@ -106,12 +106,29 @@ impl App {
         }
     }
 
-    pub fn deploy(&self, binary_path: String, binary_hash: String) -> Self {
+    pub fn deployed(&self, binary_path: String, binary_hash: String) -> Self {
         Self {
             binary_path: Some(binary_path),
             binary_hash: Some(binary_hash),
             updated_at: Utc::now(),
             state: AppState::Deployed,
+            ..self.clone()
+        }
+    }
+
+    pub fn started(&self) -> Self {
+        Self {
+            updated_at: Utc::now(),
+            state: AppState::Starting,
+            ..self.clone()
+        }
+    }
+
+    pub fn running(&self, process_id: u32) -> Self {
+        Self {
+            process_id: Some(process_id),
+            state: AppState::Running,
+            updated_at: Utc::now(),
             ..self.clone()
         }
     }

@@ -187,13 +187,15 @@ impl Supervisor {
         processes: &Arc<Mutex<HashMap<String, RunningProcess>>>,
         app: &App,
     ) -> Result<()> {
-        match app_command::start::execute(db_pool, &app.name).await {
-            Ok(child) => {
+        use crate::providers::cmd::CmdProvider;
+
+        match app_command::start::execute(db_pool, &app.name, CmdProvider {}).await {
+            Ok(handle) => {
                 let mut process_map = processes.lock().unwrap();
                 process_map.insert(
                     app.name.clone(),
                     RunningProcess {
-                        child,
+                        child: handle,
                         started_at: Instant::now(),
                     },
                 );

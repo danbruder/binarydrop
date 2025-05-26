@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 static TEST_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 static TEST_CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, thiserror::Error)]
 pub enum ConfigError {
     #[error("I/O error: {0}")]
     IoError(String),
