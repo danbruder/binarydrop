@@ -27,17 +27,12 @@ pub async fn execute(
     pool: &sqlx::Pool<sqlx::Sqlite>,
 ) -> Result<(), AppCreateError> {
     // Check if app already exists
-    if let Some(_) = db::apps::get_by_name(pool, app_name)
-        .await
-        .map_err(|_| AppCreateError::InternalError)?
-    {
+    if let Some(_) = db::apps::get_by_name(pool, app_name).await? {
         return Err(AppCreateError::AppAlreadyExists(app_name.to_string()));
     }
 
     // Get next available port
-    let port = config::get_next_available_port(pool)
-        .await
-        .map_err(|_| AppCreateError::InvalidPort)?;
+    let port = config::get_next_available_port(pool).await?;
 
     // Create app
     let app = App::new(app_name, port)?;
