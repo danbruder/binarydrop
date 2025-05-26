@@ -13,7 +13,6 @@ pub struct ServerConfig {
     pub host: String,
     pub proxy_host: String,
     pub proxy_port: u16,
-    pub url: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -27,7 +26,6 @@ impl Default for ServerConfig {
             host: "0.0.0.0".to_string(),
             proxy_host: "0.0.0.0".to_string(),
             proxy_port: 80,
-            url: "http://admin-api.localhost".to_string(),
         }
     }
 }
