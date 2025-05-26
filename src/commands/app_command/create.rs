@@ -1,5 +1,5 @@
 use sqlx::{Pool, Sqlite};
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::db;
 use crate::models::App;
@@ -22,6 +22,7 @@ pub enum AppCreateError {
 pub type Result<T> = std::result::Result<T, AppCreateError>;
 
 /// Create a new app
+#[instrument(skip(pool, provider))]
 pub async fn execute<H: Handle>(
     pool: &Pool<Sqlite>,
     app_name: &str,
@@ -35,7 +36,7 @@ pub async fn execute<H: Handle>(
     // Create app
     let app = App::new(app_name)?;
 
-    provider.setup(pool, &app).await?;
+    let app = provider.setup(pool, &app).await?;
 
     // Save app to database
     db::apps::save(pool, &app).await?;

@@ -4,6 +4,7 @@ use sqlx::Row;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::OnceLock;
+use tracing::instrument;
 
 static TEST_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 static TEST_CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -55,6 +56,7 @@ pub fn set_test_dirs(data_dir: PathBuf, config_dir: PathBuf) {
 }
 
 /// Get the config directory
+#[instrument]
 pub fn get_config_dir() -> Result<PathBuf, ConfigError> {
     if let Some(dir) = TEST_CONFIG_DIR.get() {
         return Ok(dir.clone());
@@ -95,6 +97,7 @@ pub fn get_data_dir() -> Result<PathBuf, ConfigError> {
 }
 
 /// Get a unique port for a new app
+#[instrument]
 pub async fn get_next_available_port(
     db_pool: &sqlx::Pool<sqlx::Sqlite>,
 ) -> Result<u16, ConfigError> {
@@ -122,6 +125,7 @@ pub async fn get_next_available_port(
 }
 
 /// Get the app directory
+#[instrument]
 pub fn get_app_dir(app_name: &str) -> Result<PathBuf, ConfigError> {
     let apps_dir = get_data_dir()?.join("apps");
 
@@ -141,19 +145,11 @@ pub fn get_app_dir(app_name: &str) -> Result<PathBuf, ConfigError> {
 }
 
 /// Get the app binary path
+#[instrument]
 pub fn get_app_binary_path(app_name: &str) -> Result<PathBuf, ConfigError> {
-    let app_dir = get_app_dir(app_name)?.join("app");
-    if !app_dir.exists() {
-        fs::create_dir_all(&app_dir)
-            .context(format!(
-                "Failed to create app binary directory: {}",
-                app_dir.display()
-            ))
-            .map_err(|_| {
-                ConfigError::IoError("Failed to create app binary directory".to_string())
-            })?;
-    }
-    Ok(app_dir)
+    let app_path = get_app_dir(app_name)?.join("app");
+
+    Ok(app_path)
 }
 
 /// Get the app binary path
@@ -171,6 +167,7 @@ pub fn get_app_data_dir(app_name: &str) -> Result<PathBuf, ConfigError> {
 }
 
 /// Get the app log file path
+#[instrument]
 pub fn get_app_log_path(app_name: &str) -> Result<PathBuf, ConfigError> {
     Ok(get_app_dir(app_name)?.join(format!("{}.log", app_name)))
 }
@@ -205,6 +202,7 @@ impl ServerConfig {
         Ok(())
     }
 
+    #[instrument]
     pub fn get_config_path() -> Result<PathBuf, ConfigError> {
         let mut path = dirs::config_dir()
             .ok_or_else(|| ConfigError::IoError("Could not find config directory".to_string()))?;
@@ -246,6 +244,7 @@ impl ClientConfig {
         Ok(())
     }
 
+    #[instrument]
     pub fn get_config_path() -> Result<PathBuf, ConfigError> {
         let mut path = dirs::config_dir()
             .ok_or_else(|| anyhow::anyhow!("Could not find config directory"))

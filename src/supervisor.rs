@@ -219,11 +219,6 @@ impl Supervisor {
             .await?
             .ok_or_else(|| anyhow!("App '{}' not found", app_name))?;
 
-        // Check if app is running
-        // if app.state != AppState::Running {
-        //     return Err(anyhow!("App '{}' is not running", app_name));
-        // }
-
         // Get child process
         let child_opt = {
             let mut process_map = processes.lock().unwrap();

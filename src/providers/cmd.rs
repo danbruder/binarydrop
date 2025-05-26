@@ -31,6 +31,7 @@ impl Handle for Child {
 impl Provider for CmdProvider {
     type Handle = Child;
 
+    #[instrument(skip(self, pool))]
     async fn setup(&self, pool: &Pool<Sqlite>, app: &App) -> anyhow::Result<App> {
         // Create app directory
         let _ = config::get_app_dir(&app.name)?;
@@ -43,6 +44,7 @@ impl Provider for CmdProvider {
         Ok(app)
     }
 
+    #[instrument(skip(self))]
     async fn teardown(&self, app: &App) -> anyhow::Result<App> {
         let app_dir = config::get_app_dir(&app.name)?;
         std::fs::remove_dir_all(&app_dir)?;
