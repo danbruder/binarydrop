@@ -311,7 +311,8 @@ async fn delete_app(
     Path(name): Path<String>,
 ) -> impl IntoResponse {
     let pool = state.read().await.db_pool.clone();
-    match delete::execute(&pool, &name).await {
+    use crate::providers::cmd::CmdProvider;
+    match delete::execute(&pool, &name, CmdProvider {}).await {
         Ok(_) => (
             axum::http::StatusCode::OK,
             format!("App '{}' deleted", name),
@@ -336,7 +337,8 @@ async fn create_app(
     Json(payload): Json<CreateAppRequest>,
 ) -> impl IntoResponse {
     let pool = state.read().await.db_pool.clone();
-    match create::execute(&pool, &payload.name).await {
+    use crate::providers::cmd::CmdProvider;
+    match create::execute(&pool, &payload.name, CmdProvider {}).await {
         Ok(_) => (
             axum::http::StatusCode::CREATED,
             format!("App '{}' created", payload.name),

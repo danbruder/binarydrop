@@ -78,23 +78,7 @@ pub async fn execute<H: Handle>(
 mod test {
     use crate::db::apps;
     use crate::models::App;
-    use crate::providers::{Handle, Provider};
-
-    struct TestProvider;
-
-    impl Provider for TestProvider {
-        type Handle = bool;
-
-        async fn start(&self, _app: &App) -> anyhow::Result<bool> {
-            Ok(true)
-        }
-    }
-
-    impl Handle for bool {
-        fn id(&self) -> u32 {
-            1
-        }
-    }
+    use crate::providers::test::TestProvider;
 
     #[tokio::test]
     async fn test_starting_non_existant_app() {
@@ -126,7 +110,7 @@ mod test {
     async fn test_start_happy_path() {
         let pool = crate::db::test::get_test_pool().await;
         let app_name = "app";
-        let app = App::new(app_name).unwrap();
+        let app = App::new(app_name).unwrap().deployed("".into(), "".into());
         apps::save(&pool, &app).await.unwrap();
 
         let got = super::execute(&pool, app_name, TestProvider).await.unwrap();

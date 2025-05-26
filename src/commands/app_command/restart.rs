@@ -2,7 +2,6 @@ use anyhow::{anyhow, Result};
 use tracing::{info, instrument};
 
 use crate::db;
-use crate::models::AppState;
 use crate::supervisor::SUPERVISOR;
 
 /// Start an app using the supervisor
@@ -31,28 +30,28 @@ pub async fn execute(app_name: &str) -> Result<()> {
     supervisor.restart_app(app_name).await?;
 
     // Wait a bit for the app to start
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    // tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-    // Fetch the app again to get the updated state
-    let app = db::apps::get_by_name(&pool, app_name)
-        .await?
-        .ok_or_else(|| anyhow!("App '{}' not found", app_name))?;
+    // // Fetch the app again to get the updated state
+    // let app = db::apps::get_by_name(&pool, app_name)
+    //     .await?
+    //     .ok_or_else(|| anyhow!("App '{}' not found", app_name))?;
 
-    if app.state == AppState::Running {
-        println!("Successfully started app '{}'", app_name);
-        println!("App is now available at http://{}:{}", app.host, app.port);
+    // if app.state == AppState::Running {
+    //     println!("Successfully started app '{}'", app_name);
+    //     println!("App is now available at http://{}:{}", app.host, app.port);
 
-        // Print restart policy information
-        println!("Restart policy: {}", app.restart_policy);
-        if let Some(max) = app.max_restarts {
-            println!("Maximum restarts: {}", max);
-        } else {
-            println!("Maximum restarts: unlimited");
-        }
-    } else {
-        println!("App '{}' is starting...", app_name);
-        println!("Check status with: binarydrop status {}", app_name);
-    }
+    //     // Print restart policy information
+    //     println!("Restart policy: {}", app.restart_policy);
+    //     if let Some(max) = app.max_restarts {
+    //         println!("Maximum restarts: {}", max);
+    //     } else {
+    //         println!("Maximum restarts: unlimited");
+    //     }
+    // } else {
+    //     println!("App '{}' is starting...", app_name);
+    //     println!("Check status with: binarydrop status {}", app_name);
+    // }
 
     Ok(())
 }

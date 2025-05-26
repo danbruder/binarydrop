@@ -28,10 +28,6 @@ impl Handle for Child {
     }
 }
 
-struct SetupResult {
-    port: u16,
-}
-
 impl Provider for CmdProvider {
     type Handle = Child;
 
@@ -45,6 +41,13 @@ impl Provider for CmdProvider {
         let app = app.with_port(port);
 
         Ok(app)
+    }
+
+    async fn teardown(&self, app: &App) -> anyhow::Result<App> {
+        let app_dir = config::get_app_dir(&app.name)?;
+        std::fs::remove_dir_all(&app_dir)?;
+
+        Ok(app.clone())
     }
 
     #[instrument(skip(self, app))]

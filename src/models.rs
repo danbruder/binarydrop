@@ -87,6 +87,13 @@ impl App {
         }
     }
 
+    pub fn url(&self) -> String {
+        match self.port {
+            Some(port) => format!("http://{}:{}", self.host, port),
+            None => format!("http://{}", self.host),
+        }
+    }
+
     // Check if max restarts has been reached
     pub fn reached_max_restarts(&self) -> bool {
         if let Some(max) = self.max_restarts {

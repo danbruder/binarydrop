@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS apps (
     state TEXT NOT NULL,
     binary_path TEXT,
     binary_hash TEXT,
-    port INTEGER NOT NULL,
+    port INTEGER,
     environment TEXT NOT NULL,
     process_id INTEGER,
     host TEXT NOT NULL

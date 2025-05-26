@@ -454,7 +454,7 @@ impl Supervisor {
                 path,
                 expected_status,
             } => {
-                let url = format!("http://0.0.0.0:{}{}", app.port, path);
+                let url = format!("{}{}", app.url(), path);
 
                 // Create a client with timeout
                 let client = reqwest::ClientBuilder::new()
