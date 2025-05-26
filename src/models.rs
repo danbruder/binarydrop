@@ -26,10 +26,27 @@ pub struct App {
     pub health_check: Option<HealthCheck>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum AppError {
+    #[error("Invalid app name: {0}. App names must be lowercase alphanumeric with optional hyphens or underscores.")]
+    InvalidName(String),
+    #[error("Invalid port number: {0}")]
+    InvalidPort(u16),
+}
+
 impl App {
-    pub fn new(name: &str, port: u16) -> Self {
+    pub fn new(name: &str, port: u16) -> Result<Self, AppError> {
         let now = Utc::now();
-        Self {
+
+        if !is_valid_app_name(name) {
+            return Err(AppError::InvalidName(name.to_string()));
+        }
+
+        if port < 1024 {
+            return Err(AppError::InvalidPort(port));
+        }
+
+        Ok(Self {
             id: Uuid::new_v4().to_string(),
             name: name.to_string(),
             created_at: now,
@@ -50,7 +67,7 @@ impl App {
             startup_timeout: 30,
             shutdown_timeout: 10,
             health_check: Some(HealthCheck::default()),
-        }
+        })
     }
 
     // Check if app should be restarted based on its policy
@@ -75,8 +92,42 @@ impl App {
     }
 
     pub fn is_running(&self) -> bool {
-        matches!(self.state, AppState::Running | AppState::Starting)
+        matches!(self.state, AppState::Running)
     }
+
+    pub fn is_deployed(&self) -> bool {
+        matches!(self.state, AppState::Deployed)
+    }
+
+    pub fn is_hash_changed(&self, new_hash: &str) -> bool {
+        match &self.binary_hash {
+            Some(current_hash) => current_hash != new_hash,
+            None => true, // If no hash is set, consider it changed
+        }
+    }
+
+    pub fn deploy(&self, binary_path: String, binary_hash: String) -> Self {
+        Self {
+            binary_path: Some(binary_path),
+            binary_hash: Some(binary_hash),
+            updated_at: Utc::now(),
+            state: AppState::Deployed,
+            ..self.clone()
+        }
+    }
+}
+
+/// Validate app name
+fn is_valid_app_name(name: &str) -> bool {
+    if name.is_empty() || name.len() > 64 {
+        return false;
+    }
+
+    let valid_chars = name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_');
+
+    valid_chars
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -88,7 +139,6 @@ pub enum AppState {
     Stopping,
     Stopped,
     Failed,
-    // New states
     Restarting,
     Crashed,
 }

@@ -64,8 +64,8 @@ impl ApiClient {
             println!("App '{}' started successfully", app_name);
             Ok(())
         } else {
-            let error = response.text().await?;
-            Err(anyhow!("Failed to start app: {}", error))
+            let err = response.text().await?;
+            Err(anyhow!("Failed to start app: {}", err))
         }
     }
 
@@ -81,7 +81,7 @@ impl ApiClient {
             Ok(())
         } else {
             let error = response.text().await?;
-            Err(anyhow!("Failed to stop app: {}", error))
+            Err(anyhow!(error))
         }
     }
 

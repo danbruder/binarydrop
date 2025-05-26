@@ -1,18 +1,17 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use chrono::Utc;
 use sqlx::{Pool, Sqlite};
 use std::collections::HashMap;
-use std::process::{Child, Command, Stdio};
+use std::process::Child;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::time;
 use tracing::{error, info, instrument, warn};
-use uuid::Uuid;
 
-use crate::config;
+use crate::commands::app_command;
 use crate::db;
-use crate::models::{App, AppState, HealthCheckType, ProcessHistory};
+use crate::models::{App, AppState, HealthCheckType};
 
 use once_cell::sync::OnceCell;
 
@@ -188,87 +187,23 @@ impl Supervisor {
         processes: &Arc<Mutex<HashMap<String, RunningProcess>>>,
         app: &App,
     ) -> Result<()> {
-        // Check if app has been deployed
-        let binary_path = match &app.binary_path {
-            Some(path) => path,
-            None => return Err(anyhow!("App '{}' has not been deployed yet", app.name)),
-        };
-
-        info!("Starting app '{}' from binary {}", app.name, binary_path);
-
-        // Create a mutable copy to update
-        let mut app = app.clone();
-
-        // Update app state
-        app.state = AppState::Starting;
-        app.updated_at = Utc::now();
-        db::apps::save(db_pool, &app).await?;
-
-        // Get log file path
-        let log_path = config::get_app_log_path(&app.name)?;
-        let log_file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_path)
-            .context(format!("Failed to open log file: {}", log_path.display()))?;
-        let data_dir = config::get_app_data_dir(&app.name)?;
-
-        // Start process
-        let mut cmd = Command::new(binary_path);
-
-        // Add environment variables
-        cmd.env("PORT", app.port.to_string());
-        cmd.env("APP_NAME", &app.name);
-        cmd.env("DATA_DIR", &data_dir);
-        for (key, value) in &app.environment {
-            cmd.env(key, value);
+        match app_command::start::execute(db_pool, &app.name).await {
+            Ok(child) => {
+                let mut process_map = processes.lock().unwrap();
+                process_map.insert(
+                    app.name.clone(),
+                    RunningProcess {
+                        child,
+                        started_at: Instant::now(),
+                    },
+                );
+                Ok(())
+            }
+            Err(e) => {
+                error!("Failed to start process '{}': {}", app.name, e);
+                Err(anyhow!("Failed to start process: {}", e))
+            }
         }
-
-        // Configure I/O
-        cmd.stdout(Stdio::from(log_file.try_clone()?))
-            .stderr(Stdio::from(log_file));
-
-        // Start the process
-        let child = cmd
-            .spawn()
-            .context(format!("Failed to start app process: {}", binary_path))?;
-
-        let process_id = child.id();
-
-        // Add to running processes
-        {
-            let mut process_map = processes.lock().unwrap();
-            process_map.insert(
-                app.name.clone(),
-                RunningProcess {
-                    child,
-                    started_at: Instant::now(),
-                },
-            );
-        }
-
-        // Record process history
-        let history = ProcessHistory {
-            id: Uuid::new_v4().to_string(),
-            app_id: app.id.clone(),
-            started_at: Utc::now(),
-            ended_at: None,
-            exit_code: None,
-            exit_reason: None,
-        };
-        db::process_history::save(db_pool, &history).await?;
-
-        // Update app with process ID
-        app.process_id = Some(process_id);
-        app.state = AppState::Running;
-        app.updated_at = Utc::now();
-
-        // Save app to database
-        db::apps::save(db_pool, &app).await?;
-
-        info!("Started app '{}' with PID {}", app.name, process_id);
-
-        Ok(())
     }
 
     #[instrument(skip(db_pool, processes))]

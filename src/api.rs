@@ -1,9 +1,9 @@
-use crate::commands::app_command::create;
-use crate::commands::app_command::deploy;
-use crate::commands::app_command::{start, stop};
-use crate::commands::app_command::delete;
 use crate::commands::app_command::app_env;
+use crate::commands::app_command::create;
+use crate::commands::app_command::delete;
+use crate::commands::app_command::deploy;
 use crate::commands::app_command::restart;
+use crate::commands::app_command::{start, stop};
 use crate::commands::server_command::serve::ProxyState;
 use crate::db;
 use axum::extract::DefaultBodyLimit;
@@ -99,12 +99,13 @@ async fn get_app(
     }
 }
 
-#[instrument(skip(_state))]
+#[instrument(skip(state))]
 async fn start_app(
-    State(_state): State<Arc<RwLock<ProxyState>>>,
+    State(state): State<Arc<RwLock<ProxyState>>>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
-    match start::execute(&name).await {
+    let pool = state.read().await.db_pool.clone();
+    match start::execute(&pool, &name).await {
         Ok(_) => (
             axum::http::StatusCode::OK,
             format!("App '{}' started", name),
@@ -367,10 +368,20 @@ async fn set_env(
     Path(name): Path<String>,
     Json(payload): Json<SetEnvRequest>,
 ) -> impl IntoResponse {
-    match app_env::set_env(&name, &payload.key, &payload.value, payload.delete.unwrap_or(false)).await {
+    match app_env::set_env(
+        &name,
+        &payload.key,
+        &payload.value,
+        payload.delete.unwrap_or(false),
+    )
+    .await
+    {
         Ok(_) => (
             axum::http::StatusCode::OK,
-            format!("Environment variable {} set for app '{}'", payload.key, name),
+            format!(
+                "Environment variable {} set for app '{}'",
+                payload.key, name
+            ),
         )
             .into_response(),
         Err(e) => (

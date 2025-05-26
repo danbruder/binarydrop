@@ -1,79 +1,79 @@
-use anyhow::{anyhow, Context, Result};
-use chrono::Utc;
 use sha2::{Digest, Sha256};
+use sqlx::{Pool, Sqlite};
 use std::fs;
 use tracing::{info, instrument};
 
 use crate::config;
 use crate::db;
-use crate::models::AppState;
+
+#[derive(Debug, thiserror::Error)]
+pub enum DeployError {
+    #[error("App not found: {0}")]
+    AppNotFound(String),
+    #[error("Failed to copy binary: {0}")]
+    CopyError(String),
+    #[error("Failed to set permissions: {0}")]
+    PermissionError(String),
+    #[error("ConfigError error: {0}")]
+    ConfigError(#[from] crate::config::ConfigError),
+    #[error("DatabaseError: {0}")]
+    DatabaseError(#[from] crate::db::DatabaseError),
+}
+
+type Result<T> = anyhow::Result<T, DeployError>;
 
 /// Deploy a binary to an app
 #[instrument(skip(binary_data))]
-pub async fn execute(app_name: &str, binary_data: &[u8]) -> Result<()> {
+pub async fn execute(pool: &Pool<Sqlite>, app_name: &str, binary_data: &[u8]) -> Result<()> {
     info!("Deploying binary to app '{}'", app_name);
-    let data_dir = config::get_app_data_dir(app_name)?;
-    // Create data directory if it doesn't exist
-    if !data_dir.exists() {
-        fs::create_dir_all(&data_dir).context(format!(
-            "Failed to create data directory: {}",
-            data_dir.display()
-        ))?;
-    }
-    info!("Created data directory: {}", data_dir.display());
-
-    // Connect to database
-    let pool = db::init_pool().await?;
 
     // Get app
-    let mut app = db::apps::get_by_name(&pool, app_name)
+    let app = db::apps::get_by_name(pool, app_name)
         .await?
-        .ok_or_else(|| anyhow!("App '{}' not found", app_name))?;
+        .ok_or_else(|| DeployError::AppNotFound(app_name.to_string()))?;
 
-    // Calculate binary hash
-    let mut hasher = Sha256::new();
-    hasher.update(binary_data);
-    let hash = hex::encode(hasher.finalize());
+    let hash = hash_binary(binary_data);
 
-    // Check if binary is the same
-    if let Some(current_hash) = &app.binary_hash {
-        if current_hash == &hash {
-            println!("Binary is identical to the currently deployed version.");
-            return Ok(());
-        }
+    if !app.is_hash_changed(&hash) {
+        println!("Binary is identical to the currently deployed version.");
+        return Ok(());
     }
 
+    let target_path = config::get_app_binary_path(app_name)?
+        .to_string_lossy()
+        .to_string();
+    copy_and_set_permissions(&target_path, binary_data)?;
+
+    // Update and save to database
+    let app = app.deploy(target_path, hash);
+    db::apps::save(&pool, &app).await?;
+
+    info!("Deployed binary to app '{}'", app_name);
+
+    Ok(())
+}
+
+fn hash_binary(binary_data: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(binary_data);
+    hex::encode(hasher.finalize())
+}
+
+fn copy_and_set_permissions(target_path: &str, binary_data: &[u8]) -> Result<()> {
     // Save binary to app directory
-    let target_path = config::get_app_binary_path(app_name)?;
-    fs::write(&target_path, binary_data).context(format!(
-        "Failed to write binary to app directory: {}",
-        target_path.display()
-    ))?;
+    fs::write(target_path, binary_data)
+        .map_err(|_| DeployError::CopyError(target_path.to_string()))?;
 
     // Make binary executable
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&target_path)?.permissions();
+        let mut perms = fs::metadata(target_path)
+            .map_err(|_| DeployError::PermissionError(target_path.to_string()))?
+            .permissions();
         perms.set_mode(0o755);
-        fs::set_permissions(&target_path, perms)?;
+        fs::set_permissions(&target_path, perms)
+            .map_err(|_| DeployError::PermissionError(target_path.to_string()))?;
     }
-
-    // Update app
-    app.state = AppState::Deployed;
-    app.binary_path = Some(target_path.to_string_lossy().to_string());
-    app.binary_hash = Some(hash);
-    app.updated_at = Utc::now();
-
-    // Save app to database
-    db::apps::save(&pool, &app).await?;
-
-    info!("Deployed binary to app '{}'", app_name);
-    println!("Successfully deployed binary to app '{}'", app_name);
-    println!(
-        "You can now start the app with: binarydrop start {}",
-        app_name
-    );
-
     Ok(())
 }

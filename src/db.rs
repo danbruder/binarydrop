@@ -1,4 +1,3 @@
-use anyhow::{Context, Result};
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::path::PathBuf;
 use tracing::{debug, info, instrument};
@@ -7,6 +6,24 @@ use crate::models::ProcessHistory;
 
 use crate::config;
 use crate::models::{App, AppState};
+
+#[derive(Debug, thiserror::Error)]
+pub enum DatabaseError {
+    #[error("SQLx error: {0}")]
+    SqlxError(#[from] sqlx::Error),
+    #[error("Migrate error: {0}")]
+    MigrationError(#[from] sqlx::migrate::MigrateError),
+    #[error("Config error: {0}")]
+    ConfigError(#[from] config::ConfigError),
+    #[error("Io error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Serialization Error: {0}")]
+    SerdeError(#[from] serde_json::Error),
+    #[error("Date parse error: {0}")]
+    ChronoError(#[from] chrono::ParseError),
+}
+
+type Result<T> = anyhow::Result<T, DatabaseError>;
 
 /// Get the database file path
 pub fn get_db_path() -> Result<PathBuf> {
@@ -22,13 +39,12 @@ pub async fn init_pool() -> Result<Pool<Sqlite>> {
 
     // Create parent directory if it doesn't exist
     if let Some(parent) = db_path.parent() {
-        std::fs::create_dir_all(parent).context("Failed to create config directory")?;
-    }
-
+        std::fs::create_dir_all(parent)?;
+    };
     // Check if database file exists
     if !db_path.exists() {
         // Create an empty file
-        std::fs::File::create(&db_path).context("Failed to create database file")?;
+        std::fs::File::create(&db_path)?;
         info!("Created new database file at {}", db_path.display());
     }
 
@@ -39,14 +55,10 @@ pub async fn init_pool() -> Result<Pool<Sqlite>> {
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
         .connect(&db_url)
-        .await
-        .context("Failed to connect to SQLite database")?;
+        .await?;
 
     // Run migrations
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .context("Failed to run database migrations")?;
+    sqlx::migrate!("./migrations").run(&pool).await?;
 
     info!("Database initialized successfully");
 
@@ -152,14 +164,11 @@ pub mod apps {
         match record {
             Some(record) => {
                 // Parse environment JSON
-                let environment = serde_json::from_str(&record.environment)
-                    .context("Failed to parse environment JSON")?;
+                let environment = serde_json::from_str(&record.environment)?;
 
                 // Parse health check JSON if present
                 let health_check = match record.health_check {
-                    Some(json) => Some(
-                        serde_json::from_str(&json).context("Failed to parse health check JSON")?,
-                    ),
+                    Some(json) => Some(serde_json::from_str(&json)?),
                     None => None,
                 };
 
@@ -234,14 +243,11 @@ pub mod apps {
 
         for record in records {
             // Parse environment JSON
-            let environment = serde_json::from_str(&record.environment)
-                .context("Failed to parse environment JSON")?;
+            let environment = serde_json::from_str(&record.environment)?;
 
             // Parse health check JSON if present
             let health_check = match record.health_check {
-                Some(json) => {
-                    Some(serde_json::from_str(&json).context("Failed to parse health check JSON")?)
-                }
+                Some(json) => Some(serde_json::from_str(&json)?),
                 None => None,
             };
 
@@ -298,7 +304,6 @@ pub mod apps {
 
         Ok(())
     }
-    
 
     /// Get all apps
     #[instrument(skip(pool))]
@@ -320,14 +325,11 @@ pub mod apps {
 
         for record in records {
             // Parse environment JSON
-            let environment = serde_json::from_str(&record.environment)
-                .context("Failed to parse environment JSON")?;
+            let environment = serde_json::from_str(&record.environment)?;
 
             // Parse health check JSON if present
             let health_check = match record.health_check {
-                Some(json) => {
-                    Some(serde_json::from_str(&json).context("Failed to parse health check JSON")?)
-                }
+                Some(json) => Some(serde_json::from_str(&json)?),
                 None => None,
             };
 
@@ -403,8 +405,7 @@ pub mod process_history {
                 history.exit_reason
             )
             .execute(pool)
-            .await
-            .context("Failed to insert process history")?;
+            .await?;
         } else {
             // Update existing entry
             sqlx::query!(
@@ -419,8 +420,7 @@ pub mod process_history {
                 history.id
             )
             .execute(pool)
-            .await
-            .context("Failed to update process history")?;
+            .await?;
         }
 
         Ok(())
@@ -439,8 +439,7 @@ pub mod process_history {
             app_id
         )
         .fetch_all(pool)
-        .await
-        .context("Failed to get process history")?;
+        .await?;
 
         let mut history_entries = Vec::new();
 
@@ -471,8 +470,7 @@ pub mod process_history {
             limit
         )
         .fetch_all(pool)
-        .await
-        .context("Failed to get recent process history")?;
+        .await?;
 
         let mut history_entries = Vec::new();
 
@@ -502,8 +500,7 @@ pub mod process_history {
             id
         )
         .fetch_optional(pool)
-        .await
-        .context("Failed to get process history by ID")?;
+        .await?;
 
         match record {
             Some(record) => Ok(Some(ProcessHistory {
@@ -529,9 +526,26 @@ pub mod process_history {
             app_id
         )
         .execute(pool)
-        .await
-        .context("Failed to delete process history")?;
+        .await?;
 
         Ok(result.rows_affected())
+    }
+}
+
+#[cfg(test)]
+pub mod test {
+    use super::*;
+
+    pub async fn get_test_pool() -> Pool<Sqlite> {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect(":memory:")
+            .await
+            .unwrap();
+
+        // Run migrations
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
+        pool
     }
 }

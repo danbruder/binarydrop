@@ -1,28 +1,46 @@
-use anyhow::{anyhow, Context, Result};
-use tracing::{info, instrument};
+use anyhow::Result;
+use tracing::info;
 
 use crate::config;
 use crate::db;
 use crate::models::App;
 
-/// Create a new app
-#[instrument]
-pub async fn execute(app_name: &str, pool: &sqlx::Pool<sqlx::Sqlite>) -> Result<()> {
-    // Validate app name
-    if !is_valid_app_name(app_name) {
-        return Err(anyhow!("Invalid app name. App names must be lowercase alphanumeric with optional hyphens or underscores."));
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum AppCreateError {
+    #[error("App already exists: {0}")]
+    AppAlreadyExists(String),
+    #[error("Failed to get next available port")]
+    InvalidPort,
+    #[error("Failed to create app: {0}")]
+    AppError(#[from] crate::models::AppError),
+    #[error("Failed to configure app: {0}")]
+    ConfigError(#[from] crate::config::ConfigError),
+    #[error("Failed to create app: {0}")]
+    DatabaseError(#[from] crate::db::DatabaseError),
+    #[error("Internal Error")]
+    InternalError,
+}
 
+/// Create a new app
+pub async fn execute(
+    app_name: &str,
+    pool: &sqlx::Pool<sqlx::Sqlite>,
+) -> Result<(), AppCreateError> {
     // Check if app already exists
-    if let Some(_) = db::apps::get_by_name(pool, app_name).await? {
-        return Err(anyhow!("App '{}' already exists", app_name));
+    if let Some(_) = db::apps::get_by_name(pool, app_name)
+        .await
+        .map_err(|_| AppCreateError::InternalError)?
+    {
+        return Err(AppCreateError::AppAlreadyExists(app_name.to_string()));
     }
 
     // Get next available port
-    let port = config::get_next_available_port(pool).await?;
+    let port = config::get_next_available_port(pool)
+        .await
+        .map_err(|_| AppCreateError::InvalidPort)?;
 
     // Create app
-    let app = App::new(app_name, port);
+    let app = App::new(app_name, port)?;
 
     // Create app directory
     let _ = config::get_app_dir(app_name)?;
@@ -31,24 +49,6 @@ pub async fn execute(app_name: &str, pool: &sqlx::Pool<sqlx::Sqlite>) -> Result<
     db::apps::save(pool, &app).await?;
 
     info!("Created app '{}' on port {}", app_name, port);
-    println!("Successfully created app '{}'", app_name);
-    println!(
-        "App will be available at http://localhost:{} once deployed and started",
-        port
-    );
 
     Ok(())
-}
-
-/// Validate app name
-fn is_valid_app_name(name: &str) -> bool {
-    if name.is_empty() || name.len() > 64 {
-        return false;
-    }
-
-    let valid_chars = name
-        .chars()
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_');
-
-    valid_chars
 }
