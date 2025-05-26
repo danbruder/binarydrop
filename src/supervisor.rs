@@ -544,46 +544,6 @@ impl Supervisor {
                     }
                 }
             }
-            HealthCheckType::TcpPort => {
-                // Try to connect to the app's port
-                match tokio::net::TcpStream::connect(format!("0.0.0.0:{}", app.port)).await {
-                    Ok(_) => {
-                        info!("Health check passed for app '{}'", app_name);
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        return Err(anyhow!("Health check failed for app '{}': {}", app_name, e));
-                    }
-                }
-            }
-            HealthCheckType::Command {
-                cmd,
-                args,
-                success_exit_code,
-            } => {
-                // Run command
-                let mut command = Command::new(cmd);
-                command.args(args);
-
-                match command.output() {
-                    Ok(output) => {
-                        if output.status.code() == Some(*success_exit_code) {
-                            info!("Health check passed for app '{}'", app_name);
-                            return Ok(());
-                        } else {
-                            return Err(anyhow!(
-                                "Health check failed for app '{}': expected exit code {}, got {:?}",
-                                app_name,
-                                success_exit_code,
-                                output.status.code()
-                            ));
-                        }
-                    }
-                    Err(e) => {
-                        return Err(anyhow!("Health check failed for app '{}': {}", app_name, e));
-                    }
-                }
-            }
         }
     }
 

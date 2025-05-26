@@ -31,3 +31,5 @@ The admin API needs to know about the supervisor so it can send updates when the
 Also want to make the API authenticated - and a flow to do that. i.e. generate a secret with a new command line, store it in the database, then load it at run time. But that can come later. 
 
 Need to clean up the "directory stuff" - right now it is a bit of a mess
+
+New supervisor. What does it need to do? For each app, it should only be working on one action at a time. Start, Stop, Restart, etc. An actor for each application would be best. Also, when it receives a command, it should clear other commands as needed. For example, if I want to stop an app, I don't care about a health check. What if all stuff went through an actor like that? Because we don't want to constrain things on one single slow app action.

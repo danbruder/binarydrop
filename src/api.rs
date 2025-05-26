@@ -3,6 +3,7 @@ use crate::commands::app_command::deploy;
 use crate::commands::app_command::{start, stop};
 use crate::commands::app_command::delete;
 use crate::commands::app_command::app_env;
+use crate::commands::app_command::restart;
 use crate::commands::server_command::serve::ProxyState;
 use crate::db;
 use axum::extract::DefaultBodyLimit;
@@ -141,17 +142,7 @@ async fn restart_app(
     State(_state): State<Arc<RwLock<ProxyState>>>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
-    // First stop the app
-    if let Err(e) = stop::execute(&name).await {
-        return (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to stop app: {}", e),
-        )
-            .into_response();
-    }
-
-    // Then start it again
-    match start::execute(&name).await {
+    match restart::execute(&name).await {
         Ok(_) => (
             axum::http::StatusCode::OK,
             format!("App '{}' restarted", name),
@@ -159,7 +150,7 @@ async fn restart_app(
             .into_response(),
         Err(e) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to start app: {}", e),
+            format!("Failed to restart app: {}", e),
         )
             .into_response(),
     }

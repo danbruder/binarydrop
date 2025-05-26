@@ -137,16 +137,7 @@ pub struct HealthCheck {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum HealthCheckType {
-    HttpGet {
-        path: String,
-        expected_status: u16,
-    },
-    TcpPort,
-    Command {
-        cmd: String,
-        args: Vec<String>,
-        success_exit_code: i32,
-    },
+    HttpGet { path: String, expected_status: u16 },
 }
 
 impl Default for HealthCheck {

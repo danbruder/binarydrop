@@ -25,11 +25,7 @@ pub async fn execute(app_name: &str, pool: &sqlx::Pool<sqlx::Sqlite>) -> Result<
     let app = App::new(app_name, port);
 
     // Create app directory
-    let app_dir = config::get_app_dir(app_name)?;
-    std::fs::create_dir_all(&app_dir).context(format!(
-        "Failed to create app directory: {}",
-        app_dir.display()
-    ))?;
+    let _ = config::get_app_dir(app_name)?;
 
     // Save app to database
     db::apps::save(pool, &app).await?;
